@@ -1,0 +1,15 @@
+# Dependencies and build output (root-anchored so nothing under src/ is ignored)
+/node_modules/
+/dist/
+/coverage/
+/*.tgz
+
+# Environment and secrets
+/.env
+/.env.*
+!/.env.example
+
+# OS and editors
+.DS_Store
+/.vscode/
+/.idea/

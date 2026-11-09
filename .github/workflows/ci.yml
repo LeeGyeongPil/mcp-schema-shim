@@ -1,0 +1,25 @@
+# Offline checks only: no network access to any model provider and no API keys are needed.
+name: ci
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1"   # weekly: catch dependency/runtime changes
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["22", "24"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run demo
+      - run: node examples/library.mjs

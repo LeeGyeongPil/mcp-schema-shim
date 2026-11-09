@@ -1,0 +1,145 @@
+{
+  "tools": [
+    {
+      "name": "refs_tool",
+      "description": "Local $ref/$defs, one reference with a sibling description",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "$defs": {
+          "Address": {
+            "type": "object",
+            "properties": {
+              "street": { "type": "string", "minLength": 1 },
+              "zip": { "type": "string" }
+            },
+            "required": ["street"]
+          }
+        },
+        "properties": {
+          "home": { "$ref": "#/$defs/Address" },
+          "work": { "$ref": "#/$defs/Address", "description": "Work address" },
+          "others": { "type": "array", "items": { "$ref": "#/$defs/Address" } }
+        },
+        "required": ["home"]
+      }
+    },
+    {
+      "name": "recursive_tool",
+      "description": "Recursive tree: cannot be inlined",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "root": { "$ref": "#/$defs/Node" } },
+        "required": ["root"],
+        "$defs": {
+          "Node": {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string" },
+              "children": { "type": "array", "items": { "$ref": "#/$defs/Node" } }
+            },
+            "required": ["label"]
+          }
+        }
+      }
+    },
+    {
+      "name": "types_tool",
+      "description": "Type arrays, const and enums of non-string values",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": ["string", "integer"] },
+          "note": { "type": ["string", "null"] },
+          "level": { "const": 2 },
+          "priority": { "type": "integer", "enum": [1, 2, 3] },
+          "mode": { "const": "fast" },
+          "flag": { "type": "boolean" },
+          "scores": { "type": "array", "items": { "type": "integer", "enum": [10, 20] } }
+        },
+        "required": ["id", "note"]
+      }
+    },
+    {
+      "name": "union_siblings",
+      "description": "anyOf with sibling fields, oneOf, allOf, tuple-less array",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "value": { "description": "text or number", "anyOf": [{ "type": "string" }, { "type": "integer" }] },
+          "choice": { "oneOf": [{ "type": "string", "maxLength": 5 }, { "type": "boolean" }] },
+          "combined": {
+            "allOf": [
+              { "type": "object", "properties": { "a": { "type": "string" } }, "required": ["a"] },
+              { "type": "object", "properties": { "b": { "type": "integer" } } }
+            ]
+          },
+          "tags": { "type": "array", "minItems": 1, "items": { "type": "string" }, "uniqueItems": true }
+        },
+        "required": ["value", "choice", "combined"]
+      }
+    },
+    {
+      "name": "fs.read_file",
+      "description": "Dotted tool name",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "path": { "type": "string", "minLength": 1 } },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "fs_read_file",
+      "description": "Collides with the sanitized name of fs.read_file",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "root_anyof",
+      "description": "Root anyOf: no provider accepts this as an object schema",
+      "inputSchema": {
+        "anyOf": [
+          { "type": "object", "properties": { "a": { "type": "string" } }, "required": ["a"] },
+          { "type": "object", "properties": { "b": { "type": "string" } }, "required": ["b"] }
+        ]
+      }
+    },
+    {
+      "name": "no_args",
+      "description": "Tool without arguments",
+      "inputSchema": { "type": "object", "additionalProperties": false, "properties": {} }
+    },
+    {
+      "name": "freeform",
+      "description": "Free-form maps",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "meta": { "type": "object", "additionalProperties": { "type": "string" } },
+          "extra": { "type": "object" }
+        }
+      }
+    },
+    {
+      "name": "constraints_tool",
+      "description": "Numeric constraints, long pattern, unusual formats",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ratio": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "multipleOf": 1 },
+          "link": { "type": "string", "format": "uri" },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "name": { "type": "string", "minLength": 2, "maxLength": 20 }
+        },
+        "required": ["ratio", "name"]
+      }
+    }
+  ]
+}

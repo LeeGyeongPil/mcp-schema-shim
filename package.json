@@ -1,0 +1,40 @@
+{
+  "name": "mcp-schema-shim",
+  "version": "0.1.0",
+  "description": "Check and transform MCP tool input schemas for Gemini, OpenAI strict and Anthropic strict function calling, and restore the arguments the model sends back to the original schema shape.",
+  "license": "MIT",
+  "author": "LeeGyeongPil",
+  "type": "module",
+  "keywords": ["mcp", "model-context-protocol", "json-schema", "function-calling", "gemini", "openai", "anthropic", "proxy"],
+  "repository": { "type": "git", "url": "git+https://github.com/LeeGyeongPil/mcp-schema-shim.git" },
+  "bugs": { "url": "https://github.com/LeeGyeongPil/mcp-schema-shim/issues" },
+  "homepage": "https://github.com/LeeGyeongPil/mcp-schema-shim#readme",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./package.json": "./package.json"
+  },
+  "bin": { "mcp-schema-shim": "dist/cli.js" },
+  "files": ["dist", "README.md", "LICENSE", "CHANGELOG.md"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "demo": "npm run build && node dist/cli.js simulate --profile openai-strict --tool search_issues --args '{\"query\":\"bug\"}' -- node examples/server-v1.mjs",
+    "docs:rules": "npm run build && node scripts/gen-rules.mjs > docs/rules.md",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@modelcontextprotocol/server": "2.4.0",
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0",
+    "zod": "4.6.7"
+  }
+}
