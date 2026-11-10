@@ -8,8 +8,9 @@ import { appendDescription, brief, ensureObjectRoot, isObjectSchema, refHooks, t
 const DOC = DOC_URLS.anthropicStructured;
 
 export const rules = defineRules("anthropic-strict", [
-  { name: "unsupported-constraint", severity: "error", fixable: true, summary: "minimum, maximum, exclusiveMinimum, exclusiveMaximum, multipleOf, minLength and maxLength are rejected (400); they move into the description and the original schema re-checks them on restore.", docUrl: DOC },
-  { name: "complex-pattern", severity: "error", fixable: true, summary: "Complex regular expressions (longer than 200 characters, back-references, look-around) are rejected; the pattern moves into the description.", docUrl: DOC },
+  { name: "unsupported-constraint", severity: "error", fixable: true, summary: "minimum, maximum, exclusiveMinimum, exclusiveMaximum, multipleOf, minLength and maxLength, and array constraints (maxItems, uniqueItems, minItems of 2 or more; minItems 0 and 1 are fine) are rejected (400); they move into the description and the original schema re-checks them on restore.", docUrl: DOC },
+  { name: "complex-pattern", severity: "error", fixable: true, summary: "Complex regular expressions (longer than 200 characters, back-references, look-around, word boundaries \\b and \\B) are rejected; the pattern moves into the description.", docUrl: DOC },
+  { name: "unsupported-format", severity: "error", fixable: true, summary: "Only date-time, time, date, duration, email, hostname, uri, ipv4, ipv6 and uuid formats are supported; others are rejected (400) and move into the description.", docUrl: DOC },
   { name: "additional-properties", severity: "warning", fixable: true, summary: "Objects should set additionalProperties: false explicitly (true is rejected).", docUrl: DOC },
   { name: "additional-properties-schema", severity: "error", fixable: false, summary: "A schema-valued additionalProperties (map) is not supported; only false is.", docUrl: DOC },
   { name: "ref-recursive", severity: "error", fixable: false, summary: "Recursive $ref is not supported.", docUrl: DOC },
@@ -21,8 +22,16 @@ export const rules = defineRules("anthropic-strict", [
 
 const CONSTRAINTS = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength"];
 
+const FORMATS = new Set(["date-time", "time", "date", "duration", "email", "hostname", "uri", "ipv4", "ipv6", "uuid"]);
+
+/** Array keywords that are rejected; minItems is handled separately because 0 and 1 are allowed. */
+const ARRAY_CONSTRAINTS = ["maxItems", "uniqueItems"];
+
+/** True when the pattern has \b or \B that is not itself escaped (an escaped backslash followed by b is a literal). */
+const WORD_BOUNDARY = /(?:^|[^\\])(?:\\\\)*\\[bB]/;
+
 function isComplexPattern(p: string): boolean {
-  return p.length > 200 || /\\[1-9]/.test(p) || /\(\?<?[=!]/.test(p);
+  return p.length > 200 || /\\[1-9]/.test(p) || /\(\?<?[=!]/.test(p) || WORD_BOUNDARY.test(p);
 }
 
 function visit(input: JsonSchema, pointer: string, argPath: string, ctx: Ctx): JsonSchema {
@@ -36,10 +45,24 @@ function visit(input: JsonSchema, pointer: string, argPath: string, ctx: Ctx): J
     moved.push(k + " " + brief(n[k]));
     delete n[k];
   }
+  const arrayKeys = n.minItems !== undefined && !(typeof n.minItems === "number" && n.minItems <= 1) ? ["minItems", ...ARRAY_CONSTRAINTS] : ARRAY_CONSTRAINTS;
+  for (const k of arrayKeys) {
+    if (!(k in n)) continue;
+    ctx.emit("unsupported-constraint", pointer + "/" + k, k + " is rejected by strict tool use; it moved into the description");
+    ctx.record({ op: "constraint-to-description", schemaPointer: pointer, argPath, lossy: true, detail: k + " " + brief(n[k]) });
+    moved.push(k + " " + brief(n[k]));
+    delete n[k];
+  }
+  if (typeof n.format === "string" && !FORMATS.has(n.format)) {
+    ctx.emit("unsupported-format", pointer + "/format", 'format "' + n.format + '" is not supported by strict tool use; it moved into the description');
+    ctx.record({ op: "constraint-to-description", schemaPointer: pointer, argPath, lossy: true, detail: "format " + n.format });
+    moved.push("format: " + n.format);
+    delete n.format;
+  }
   if (typeof n.pattern === "string" && isComplexPattern(n.pattern)) {
     ctx.emit("complex-pattern", pointer + "/pattern", "pattern is too complex for strict tool use; it moved into the description");
     ctx.record({ op: "constraint-to-description", schemaPointer: pointer, argPath, lossy: true, detail: "pattern (complex)" });
-    moved.push(n.format ? "format " + n.format : "pattern " + brief(n.pattern, 80));
+    moved.push("pattern " + brief(n.pattern, 80));
     delete n.pattern;
   }
   if (moved.length > 0) appendDescription(n, "constraints: " + moved.join(", "));

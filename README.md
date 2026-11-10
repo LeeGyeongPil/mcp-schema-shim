@@ -167,7 +167,7 @@ node examples/library.mjs
 | `gemini-parameters` | Gemini 함수 선언의 옛 `parameters` 필드(OpenAPI 부분집합). 도구 하나가 틀리면 요청 전체가 실패합니다. | `$ref` 펼치기, `const`/숫자 enum 문자열화, `type: ["string","null"]` 를 `nullable` 로 |
 | `gemini-json-schema` | 새 `parametersJsonSchema` 필드(진짜 JSON Schema). 변환이 거의 필요 없습니다. | 루트 `type: object` 확인, 외부 `$ref` 오류, `minLength` 무시 안내 |
 | `openai-strict` | OpenAI `strict: true` 함수 호출 | 모든 객체에 `additionalProperties: false`, 선택 필드를 필수 + `null` 허용으로, 자유형 객체는 고칠 수 없음 |
-| `anthropic-strict` | Anthropic strict 도구 사용 | `minLength`·`minimum` 등을 설명으로 옮기기, 도구 이름 `^[a-zA-Z0-9_-]{1,128}$` 로 바꾸기 |
+| `anthropic-strict` | Anthropic strict 도구 사용 | `minLength`·`minimum`·배열 제약(`maxItems`·`uniqueItems`·`minItems` 2 이상)·지원 목록 밖 `format`·`\b` 패턴을 설명으로 옮기기, 도구 이름 `^[a-zA-Z0-9_-]{1,128}$` 로 바꾸기 |
 
 규칙마다 심각도(error·warning·info), 자동 수정 여부, 공식 문서 URL 이 있고 전체는 [docs/rules.md](docs/rules.md) 에 있습니다. 규칙은 문서를 읽은 날(2026-11-10) 기준입니다.
 

@@ -55,7 +55,7 @@ export class RpcClient {
     await this.request("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "mcp-schema-shim", version: "0.1.0" },
+      clientInfo: { name: "mcp-schema-shim", version: "0.1.2" },
     });
     this.notify("notifications/initialized");
   }
