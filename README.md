@@ -229,17 +229,10 @@ src/
 - 첫 `tools/list` 이전에 온 `tools/call` 은 복원 없이 통과합니다(실제 클라이언트는 먼저 목록을 요청합니다).
 - 규칙은 2026-11-10 에 읽은 제공자 문서 기준이며 실제 API 로 검증하지 않았습니다. 제공자 규칙은 바뀔 수 있습니다.
 
-## 다른 도구와 비교
-2026-11-10 에 대안을 직접 설치해 실행해 본 결과입니다.
-
-| | mcp-schema-shim | tool-schema 0.4.2 | mcp-lint 1.0.4 | @luutuankiet/gemini-mcp 0.1.7 |
-|---|---|---|---|---|
-| 제공자별 변환·검사 | 4개 프로필 | 있음(품질 좋음) | 클라이언트별 호환 매트릭스 | Gemini 만 |
-| 인자 복원 | 있음(원래 스키마 재검증) | 없음 | 없음 | `tools/call` 인자 변환 없음 |
-| MCP 프록시 | stdio | 없음 | 없음 | 있음(Gemini 전용) |
-| Anthropic strict | 있음 | 없음 | 조사 안 함 | 없음 |
-
-검사·변환만 필요하면 tool-schema 도 좋은 선택입니다. 이 도구는 인자 왕복과 프록시가 필요할 때 씁니다.
+## 언제 쓰나
+- 모델이 보낸 인자를 원래 스키마로 되돌려 검증해야 할 때(라이브러리 함수 `restore` 로 복원하고, CLI 명령 `simulate` 로 왕복 결과를 확인).
+- 기존 MCP 서버 앞에 stdio 프록시로 끼워 제공자별 스키마 규칙을 맞추고 싶을 때(`proxy`).
+- 스키마 검사·변환만 필요하다면 [tool-schema](https://github.com/slegarraga/tool-schema) 도 살펴보세요.
 
 ## 직접 바꿔 보기
 1. **프로필 바꾸기** — 바꿀 곳: `check` 의 `--profile` 을 `gemini-json-schema` 로. 예상: 오류·경고 없이 `minLength` 무시 안내(info) 2건만 나오고 종료 코드가 0 입니다. 확인: 표의 마지막 줄 `0 error(s), 0 warning(s), 2 info`.
