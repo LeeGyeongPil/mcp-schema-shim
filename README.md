@@ -1,94 +1,92 @@
 # mcp-schema-shim
 
-**한국어** | [English](README.en.md)
+**English** | [한국어](README.ko.md)
 
-> **English summary** — mcp-schema-shim checks MCP tool input schemas against the function-calling rules of Gemini, OpenAI strict mode and Anthropic strict tool use, rewrites them to fit, and restores the arguments the model sends back to the original schema shape (so `null` placeholders and renamed tools do not break your server). Use it as a stdio proxy in front of an MCP server, as a CI check, or as a library. Try it with no API key: `git clone https://github.com/LeeGyeongPil/mcp-schema-shim && cd mcp-schema-shim && npm install && npm run demo` (the demo uses a practice mock model; no LLM is called).
+mcp-schema-shim checks MCP tool input schemas against the function-calling rules of Gemini, OpenAI strict mode and Anthropic strict tool use, rewrites them to fit, and restores the arguments the model sends back to the original schema shape (so `null` placeholders and renamed tools do not break your server). Use it as a stdio proxy in front of an MCP server, as a CI check, or as a library. Try it with no API key: `git clone https://github.com/LeeGyeongPil/mcp-schema-shim && cd mcp-schema-shim && npm install && npm run demo` (the demo uses a practice mock model; no LLM is called).
 
-MCP 서버의 도구 정의(JSON Schema)를 모델 제공자(Gemini·OpenAI strict·Anthropic strict)가 받아 주는 모양으로 고쳐 주고, 모델이 고친 스키마대로 보낸 인자를 **원래 서버가 받는 모양으로 되돌려 주는** 도구입니다.
+![30-second trial result: direct fails, via shim succeeds](docs/images/01-demo.png)
+*Sending the arguments made by the practice mock model straight to the server is rejected with `-32602`; going through the shim passes.*
 
-![30초 체험 결과: 직결은 실패, shim 경유는 성공](docs/images/01-demo.png)
-*연습용 목 모델이 만든 인자를 서버에 직접 보내면 `-32602` 로 거부되고, shim 을 거치면 통과한다.*
+## Who it is for
+- People who use the same MCP server with Gemini, GPT and Claude in turn, but where one tool blocks one provider's whole request with a 400
+- Server authors who want CI to show, with official documentation links, which provider rejects their tool schema and why
+- People who want to rewrite schemas (`transformTools`) and restore the arguments the model sent (`restore`) inside agent framework code
 
-## 이런 분께
-- 같은 MCP 서버를 Gemini·GPT·Claude 로 번갈아 쓰는데, 도구 하나 때문에 한 제공자의 요청 전체가 400 으로 막히는 분
-- 서버 작성자로서 "내 도구 스키마를 어느 제공자가 왜 거부하는지"를 공식 문서 링크와 함께 CI 에서 확인하고 싶은 분
-- 에이전트 프레임워크 코드 안에서 스키마를 바꾸고(`transformTools`) 모델이 보낸 인자를 되돌리고(`restore`) 싶은 분
+## Why it is needed (an everyday analogy)
+Think of two interpreters. Each provider has a different rule: "we accept questions only in this format." If you rewrite the questionnaire to fit the format (for example, make every optional item required and fill blanks with `null`), then **the original service desk rejects a questionnaire with `null` written in it**. This tool is an adapter that pairs the side that rewrites the questionnaire with the side that turns the answer back into the original format. The key point is that "just fixing the schema" is not the end of it.
 
-## 왜 필요한가 (일상 비유)
-통역사 두 명을 생각해 보세요. 제공자마다 "이 서식으로만 질문을 받는다"는 규칙이 다릅니다. 서식을 맞추려고 질문지를 고치면(예: 선택 항목을 전부 필수로 바꾸고 빈칸은 `null`), 이번에는 **원래 창구가 `null` 이 적힌 질문지를 거부**합니다. 이 도구는 질문지를 고쳐 주는 쪽과, 답이 돌아올 때 원래 서식으로 되돌려 주는 쪽을 한 쌍으로 묶은 어댑터입니다. "스키마만 고치면 끝"이 아니라는 것이 핵심입니다.
-
-## 용어 사전
-| 용어 | 뜻 |
+## Glossary
+| Term | Meaning |
 |---|---|
-| MCP `tools/list` | MCP 서버가 "내가 가진 도구 목록"을 알려 주는 요청. 도구마다 이름·설명·`inputSchema` 가 들어 있습니다. ([MCP 사양](https://modelcontextprotocol.io/specification)) |
-| `inputSchema` | 도구가 받는 인자를 설명하는 JSON Schema. 모델은 이것을 보고 인자를 만듭니다. |
-| strict mode | 제공자가 "스키마를 정확히 따르는 인자만 만든다"고 보장하는 대신, 스키마에 쓸 수 있는 키워드를 제한하는 모드(OpenAI·Anthropic). |
-| 프로필(profile) | 제공자 한 경로의 규칙 묶음. 이 도구는 4개를 가집니다(아래 "프로필과 규칙"). |
-| JSON 포인터 | 스키마 안의 위치를 `/properties/limit` 처럼 적는 방법. 진단표의 POINTER 열입니다. ([RFC 6901](https://www.rfc-editor.org/rfc/rfc6901)) |
-| 변환 지도(map) | 스키마를 어떻게 바꿨는지 적은 기록. 인자를 되돌릴 때 씁니다. |
-| `op` | 지도 항목의 종류(`nullable-optional`, `enum-stringified`, `name-mapped` 등). 아래 표 참고. |
-| `lossy` | 변환 때 정보가 사라졌다는 표시. 사라진 제약은 마지막 원래 스키마 검증이 대신 지킵니다. |
-| 인자 복원(restore) | 모델이 변환된 스키마대로 보낸 인자를 원래 스키마 모양으로 되돌리고 검증하는 단계. |
-| `fixable` | 이 도구가 자동으로 고칠 수 있는 진단. `NOT fixable` 은 스키마를 직접 바꿔야 합니다. |
+| MCP `tools/list` | The request in which an MCP server reports "the list of tools I have". Each tool carries a name, a description and an `inputSchema`. ([MCP specification](https://modelcontextprotocol.io/specification)) |
+| `inputSchema` | The JSON Schema describing the arguments a tool accepts. The model builds arguments by looking at it. |
+| strict mode | A mode (OpenAI, Anthropic) in which the provider guarantees that it produces only arguments that follow the schema exactly, in exchange for restricting the keywords usable in the schema. |
+| profile | A bundle of rules for one provider path. This tool has 4 (see "Profiles and rules" below). |
+| JSON pointer | A way of writing a location inside a schema, like `/properties/limit`. It is the POINTER column of the diagnostics table. ([RFC 6901](https://www.rfc-editor.org/rfc/rfc6901)) |
+| conversion map (map) | A record of how the schema was changed. Used when restoring arguments. |
+| `op` | The kind of a map entry (`nullable-optional`, `enum-stringified`, `name-mapped`, etc.). See the table below. |
+| `lossy` | A mark that information was lost in the conversion. Lost constraints are enforced instead by the final validation against the original schema. |
+| argument restore (restore) | The step that turns arguments the model sent in the converted schema's shape back into the original schema's shape and validates them. |
+| `fixable` | A diagnostic this tool can fix automatically. `NOT fixable` means you must change the schema yourself. |
 
-## 설치
-전제: Node.js 20 이상(개발·테스트는 22.12 이상). 없으면 `brew install node` 또는 [nodejs.org](https://nodejs.org) 에서 설치합니다.
+## Installation
+Prerequisite: Node.js 20 or later (22.12 or later for development and tests). If you do not have it, install it with `brew install node` or from [nodejs.org](https://nodejs.org).
 
 ```bash
 git clone https://github.com/LeeGyeongPil/mcp-schema-shim
 cd mcp-schema-shim
-npm install        # 설치 중 TypeScript 빌드(dist/)까지 실행됩니다
+npm install        # the TypeScript build (dist/) also runs during install
 ```
 
-npm 레지스트리에는 아직 게시하지 않았습니다. 그래서 아래 예의 `npx mcp-schema-shim` 은 clone 한 폴더에서 `node dist/cli.js` 로 바꿔 쓰세요. 최소 리눅스 환경에서는 `git`, `node`, `npm` 만 있으면 됩니다.
+It has not been published to the npm registry yet. So replace `npx mcp-schema-shim` in the examples below with `node dist/cli.js` in the cloned folder. On a minimal Linux environment, only `git`, `node` and `npm` are needed.
 
-## 빠르게 시작하기 (30초, 연습용 목 모드)
+## Quick start (30 seconds, practice mock mode)
 ```bash
 npm run demo
 ```
-![npm run demo 실행 화면](docs/images/01-demo.png)
-*`npm run demo` 의 실제 출력.*
+![npm run demo screen](docs/images/01-demo.png)
+*The actual output of `npm run demo`.*
 
-- 첫 줄 `mock model — no LLM is called` : **연습용 목(mock) 모델**입니다. 실제 모델·API 키·네트워크를 쓰지 않고, OpenAI strict 모드의 모델이 보낼 법한 인자(`limit: null` 등)를 흉내 내 만듭니다.
-- 진짜인 것: 예제 MCP 서버와 서버의 인자 검증. 그래서 `direct: FAIL ... received null` 은 실제 서버가 낸 오류입니다.
-- 실제 모델과 다른 점: 모델이 어떤 인자를 고를지는 흉내일 뿐이며, 제공자 API 가 스키마를 받아 주는지는 호출하지 않았으므로 확인하지 않습니다.
+- First line `mock model — no LLM is called`: this is a **practice mock model**. It uses no real model, API key or network, and imitates the arguments an OpenAI strict-mode model might send (such as `limit: null`).
+- What is real: the example MCP server and the server's argument validation. So `direct: FAIL ... received null` is an actual error raised by the server.
+- How it differs from a real model: which arguments the model picks is only imitated, and whether the provider API accepts the schema is not checked because it is not called.
 
-## 사용법
-| 명령 | 하는 일 | 예 |
+## Usage
+| Command | What it does | Example |
 |---|---|---|
-| `check <tools.json> --profile <id>` / `--all` | 제공자 규칙 위반을 진단표로 출력(오류가 있으면 exit 1) | `node dist/cli.js check examples/tools.json --all` |
-| `fix <tools.json> --profile <id> [--map f] [-o f]` | 변환된 도구 JSON 과 변환 지도 저장 | `node dist/cli.js fix examples/tools.json --profile openai-strict --map map.json` |
-| `proxy --profile <id> -- <서버 명령>` | stdio MCP 서버 앞에 끼우는 프록시 | `node dist/cli.js proxy --profile gemini-parameters -- node examples/server-v1.mjs` |
-| `simulate --profile <id> [--tool n] [--args json] -- <서버 명령>` | 목 모델로 직결 vs shim 경유 비교 | `npm run demo` |
+| `check <tools.json> --profile <id>` / `--all` | Print provider rule violations as a diagnostics table (exit 1 if there are errors) | `node dist/cli.js check examples/tools.json --all` |
+| `fix <tools.json> --profile <id> [--map f] [-o f]` | Save the converted tools JSON and the conversion map | `node dist/cli.js fix examples/tools.json --profile openai-strict --map map.json` |
+| `proxy --profile <id> -- <server command>` | A proxy placed in front of a stdio MCP server | `node dist/cli.js proxy --profile gemini-parameters -- node examples/server-v1.mjs` |
+| `simulate --profile <id> [--tool n] [--args json] -- <server command>` | Compare direct vs via shim with a mock model | `npm run demo` |
 
-종료 코드: `0` 정상, `1` 오류 등급 진단(check) 또는 못 고치는 오류(fix), `2` 입력·사용법 오류. `simulate` 는 비교 결과(`via shim: FAIL` 포함)와 무관하게 `0`, 입력 오류만 `2` 입니다. 입력 파일은 `{"tools":[…]}`(`tools/list` 결과) 또는 도구 배열입니다.
+Exit codes: `0` normal, `1` error-level diagnostics (check) or an unfixable error (fix), `2` input or usage error. `simulate` returns `0` regardless of the comparison result (including `via shim: FAIL`), and `2` only for input errors. The input file is `{"tools":[…]}` (the `tools/list` result) or an array of tools.
 
-프로필: `gemini-parameters`(옛 `parameters` 필드, OpenAPI 부분집합), `gemini-json-schema`(`parametersJsonSchema`), `openai-strict`, `anthropic-strict`.
+Profiles: `gemini-parameters` (the old `parameters` field, an OpenAPI subset), `gemini-json-schema` (`parametersJsonSchema`), `openai-strict`, `anthropic-strict`.
 
-### 1) 검사하기 — 무엇이 거부되나
+### 1) Check — what gets rejected
 ```bash
 node dist/cli.js check examples/tools.json --profile openai-strict
 ```
-![openai-strict 진단표](docs/images/02-check-openai.png)
-*규칙 ID, 도구 이름, JSON 포인터(`/properties/limit`), 자동 수정 가능 여부, 공식 문서 URL 이 한 줄씩 나온다. 이 예는 10 오류·1 경고라서 exit 1.*
+![openai-strict diagnostics table](docs/images/02-check-openai.png)
+*Each line shows the rule ID, tool name, JSON pointer (`/properties/limit`), whether it can be fixed automatically, and the official documentation URL. This example has 10 errors and 1 warning, so exit 1.*
 
-읽는 법: `fixable` 이면 `fix`/프록시가 고칠 수 있다는 뜻입니다. `NOT fixable` 은 사람이 스키마를 바꿔야 합니다. `--all --format markdown` 으로 모든 프로필 결과를 표로 받아 CI 에 붙일 수 있습니다(예제 도구 기준 합계 `22 error(s), 5 warning(s), 2 info`).
+How to read it: `fixable` means `fix` or the proxy can fix it. `NOT fixable` means a person has to change the schema. With `--all --format markdown` you can get the results of all profiles as a table and paste it into CI (for the example tools the total is `22 error(s), 5 warning(s), 2 info`).
 
-### 2) 고치고 변환 지도 보기
+### 2) Fix and view the conversion map
 ```bash
 node dist/cli.js fix examples/tools.json --profile openai-strict --map map.json -o tools.openai.json
 ```
-![변환 지도 일부](docs/images/03-fix-map.png)
-*지도(`map.json`)에는 무엇을 어떻게 바꿨고(`op`), 되돌릴 때 손실이 있는지(`lossy`)가 기록된다.*
+![Part of the conversion map](docs/images/03-fix-map.png)
+*The map (`map.json`) records what was changed and how (`op`), and whether restoring loses anything (`lossy`).*
 
-### 3) 이름 변환과 원래 스키마 재검증
+### 3) Name conversion and re-validation against the original schema
 ```bash
 node dist/cli.js simulate --profile anthropic-strict --tool issues.search -- node examples/server-v1.mjs
 ```
-![도구 이름 변환 결과](docs/images/04-simulate-rename.png)
-*`issues.search` 는 모델에게 `issues_search` 로 보이고(Anthropic 이름 규칙), 서버에는 원래 이름으로 전달된다. 이 화면은 `--args '{"query":""}'` 를 준 실행이라 원래 스키마 위반 이유(`/query`)도 보인다.*
+![Tool name conversion result](docs/images/04-simulate-rename.png)
+*`issues.search` appears to the model as `issues_search` (Anthropic's naming rule) and is passed to the server under its original name. This screen is a run with `--args '{"query":""}'`, so the reason for the original-schema violation (`/query`) is also visible.*
 
-`--args` 로 원래 스키마(`minLength: 1`)를 어기는 인자를 주면, shim 은 서버에 보내지 않고 `/query` 가 왜 틀렸는지를 돌려줍니다. 설명으로 옮긴 제약(`minLength` 등)은 이 마지막 검증이 지킵니다.
+If you give `--args` arguments that violate the original schema (`minLength: 1`), the shim does not send them to the server and returns why `/query` is wrong. Constraints moved into descriptions (`minLength` and so on) are enforced by this final validation.
 
 ```bash
 node dist/cli.js simulate --profile anthropic-strict --tool issues.search --args '{"query":""}' -- node examples/server-v1.mjs
@@ -99,10 +97,10 @@ via shim: FAIL mcp-schema-shim: Arguments for tool "issues.search" do not match 
          - /query: must NOT have fewer than 1 characters (minLength)
          Fix the arguments and call the tool again.
 ```
-(위는 출력 중 마지막 두 단락만 옮긴 것입니다. `direct` 는 서버에 변환된 이름 `issues_search` 로 직접 보냈기 때문에 실패합니다.)
+(The above is only the last two paragraphs of the output. `direct` fails because it sent the converted name `issues_search` straight to the server.)
 
-### 4) 클라이언트에 끼우기
-MCP 클라이언트 설정에서 서버 항목의 `command` 를 shim 으로 감쌉니다(경로는 본인 clone 위치로):
+### 4) Plugging it into a client
+In your MCP client configuration, wrap the server entry's `command` with the shim (use your own clone location for the path):
 
 ```json
 {
@@ -115,7 +113,9 @@ MCP 클라이언트 설정에서 서버 항목의 `command` 를 shim 으로 감�
   }
 }
 ```
-프록시는 `tools/list` 응답과 `tools/call` 요청만 해석하고, 나머지 줄은 그대로 전달합니다. 직접 확인:
+(`<원래 서버 패키지>` is a placeholder for "the original server package".)
+
+The proxy interprets only `tools/list` responses and `tools/call` requests, and passes every other line through unchanged. Check it yourself:
 
 ```bash
 printf '{"jsonrpc":"2.0","id":1,"method":"ping"}\n' | node dist/cli.js proxy --profile openai-strict -- node examples/server-v1.mjs
@@ -123,145 +123,145 @@ printf '{"jsonrpc":"2.0","id":1,"method":"ping"}\n' | node dist/cli.js proxy --p
 ```
 {"result":{},"jsonrpc":"2.0","id":1}
 ```
-변환 로그는 `--log <파일>` 로 남길 수 있습니다(못 고치는 도구는 `NOT fixable` 로 기록).
+You can keep a conversion log with `--log <file>` (tools that cannot be fixed are recorded as `NOT fixable`).
 
-### 5) 라이브러리로 쓰기
-아직 npm 에 게시하지 않았으므로 다른 프로젝트에서는 clone 한 폴더 경로로 설치합니다: `npm install /path/to/mcp-schema-shim`. 아래 코드에서 `tools` 는 `tools/list` 결과 배열, `fromModel` 은 모델이 보낸 인자입니다. 바로 실행되는 완전한 예는 `examples/library.mjs` 입니다.
+### 5) Using it as a library
+It is not published to npm yet, so from another project install it by the cloned folder's path: `npm install /path/to/mcp-schema-shim`. In the code below, `tools` is the array from the `tools/list` result and `fromModel` is the arguments the model sent. A complete example you can run right away is `examples/library.mjs`.
 ```ts
 import { transformTools, restore } from "mcp-schema-shim";
 
 const { tools: forModel, map } = transformTools(tools, "openai-strict");
-// forModel 을 모델에 넘기고, 모델이 보낸 호출은 되돌린다:
+// Pass forModel to the model, and turn the calls the model sends back:
 const restored = restore("search_issues", fromModel, map);
-// restored.args 는 원래 스키마로 검증된 인자. 어기면 RestoreError(issues[]) 를 던진다.
+// restored.args are the arguments validated against the original schema. If they violate it, RestoreError(issues[]) is thrown.
 ```
 ```bash
 node examples/library.mjs
 ```
-![라이브러리 예제 출력](docs/images/05-library.png)
-*모델이 보낸 `null` 이 채워진 인자가 `{"query":"bug"}` 로 복원된다.*
+![Library example output](docs/images/05-library.png)
+*The arguments the model sent with `null` filled in are restored to `{"query":"bug"}`.*
 
-공개 API(`src/index.ts` 의 내보내기 전부):
+Public API (everything exported from `src/index.ts`):
 
-| 이름 | 종류 | 설명 |
+| Name | Kind | Description |
 |---|---|---|
-| `check(tools, profile)` | 함수 | 진단 목록(`Diagnostic[]`)만 돌려줍니다. |
-| `transformTool(tool, profile, opts?)` | 함수 | 도구 하나를 변환하고 그 도구의 지도를 만듭니다. |
-| `transformTools(tools, profile, opts?)` | 함수 | 도구 목록을 변환하고 `{ tools, map, diagnostics }` 를 돌려줍니다. |
-| `restore(name, args, map)` | 함수 | 모델이 보낸 인자를 되돌리고 원래 스키마로 검증합니다. |
-| `PROFILES` | 상수 | 프로필 4개의 설명·문서 URL·규칙 목록. |
-| `PROFILE_IDS` | 상수 | 프로필 ID 배열. |
-| `isProfileId(x)` | 함수 | 값이 프로필 ID 인지 판별하는 타입 가드. |
-| `RestoreError` | 오류 | 복원한 인자가 원래 스키마를 어길 때(`issues[]` 포함). |
-| `UnknownToolError` | 오류 | 지도에 없는 도구 이름으로 `restore` 할 때. |
-| `InputError` | 오류 | 잘못된 도구 파일·프로필 이름 등 입력 오류. |
-| `DOCS_CHECKED` | 상수 | 규칙의 공식 문서를 확인한 날짜. |
-| 타입 | 타입 | `ProfileId`, `JsonSchema`, `McpTool`, `Severity`, `Diagnostic`, `MapOp`, `MapEntry`, `ToolMap`, `ShimMap`, `TransformOptions`, `TransformResult`, `TransformToolResult`, `RestoreIssue`, `ProfileInfo`, `RuleDef` |
+| `check(tools, profile)` | function | Returns only the list of diagnostics (`Diagnostic[]`). |
+| `transformTool(tool, profile, opts?)` | function | Converts one tool and builds that tool's map. |
+| `transformTools(tools, profile, opts?)` | function | Converts a list of tools and returns `{ tools, map, diagnostics }`. |
+| `restore(name, args, map)` | function | Restores the arguments the model sent and validates them against the original schema. |
+| `PROFILES` | constant | Descriptions, documentation URLs and rule lists of the 4 profiles. |
+| `PROFILE_IDS` | constant | Array of profile IDs. |
+| `isProfileId(x)` | function | A type guard that tells whether a value is a profile ID. |
+| `RestoreError` | error | When the restored arguments violate the original schema (includes `issues[]`). |
+| `UnknownToolError` | error | When you `restore` with a tool name that is not in the map. |
+| `InputError` | error | Input errors such as a bad tools file or profile name. |
+| `DOCS_CHECKED` | constant | The date the rules' official documentation was checked. |
+| Types | types | `ProfileId`, `JsonSchema`, `McpTool`, `Severity`, `Diagnostic`, `MapOp`, `MapEntry`, `ToolMap`, `ShimMap`, `TransformOptions`, `TransformResult`, `TransformToolResult`, `RestoreIssue`, `ProfileInfo`, `RuleDef` |
 
-## 설정
-설정 파일·환경변수·API 키는 없습니다. 동작은 `--profile` 과 위 옵션으로만 정해집니다. 규칙 전체 목록(규칙마다 공식 문서 URL·확인 날짜)은 [docs/rules.md](docs/rules.md) 에 있습니다.
+## Configuration
+There are no configuration files, environment variables or API keys. Behavior is set only by `--profile` and the options above. The full rule list (with an official documentation URL and check date for each rule) is in [docs/rules.md](docs/rules.md).
 
-## 프로필과 규칙
-프로필은 "어느 제공자의 어느 경로로 보낼 것인가"입니다. `--profile` 로 고릅니다.
+## Profiles and rules
+A profile is "which provider, through which path, you will send to". Pick it with `--profile`.
 
-| 프로필 | 대상 | 대표 규칙 |
+| Profile | Target | Representative rules |
 |---|---|---|
-| `gemini-parameters` | Gemini 함수 선언의 옛 `parameters` 필드(OpenAPI 부분집합). 도구 하나가 틀리면 요청 전체가 실패합니다. | `$ref` 펼치기, `const`/숫자 enum 문자열화, `type: ["string","null"]` 를 `nullable` 로 |
-| `gemini-json-schema` | 새 `parametersJsonSchema` 필드(진짜 JSON Schema). 변환이 거의 필요 없습니다. | 루트 `type: object` 확인, 외부 `$ref` 오류, `minLength` 무시 안내 |
-| `openai-strict` | OpenAI `strict: true` 함수 호출 | 모든 객체에 `additionalProperties: false`, 선택 필드를 필수 + `null` 허용으로, 자유형 객체는 고칠 수 없음 |
-| `anthropic-strict` | Anthropic strict 도구 사용 | `minLength`·`minimum`·배열 제약(`maxItems`·`uniqueItems`·`minItems` 2 이상)·지원 목록 밖 `format`·`\b` 패턴을 설명으로 옮기기, 도구 이름 `^[a-zA-Z0-9_-]{1,128}$` 로 바꾸기 |
+| `gemini-parameters` | The old `parameters` field of Gemini function declarations (an OpenAPI subset). If one tool is wrong, the whole request fails. | Inline `$ref`, stringify `const`/numeric enums, turn `type: ["string","null"]` into `nullable` |
+| `gemini-json-schema` | The new `parametersJsonSchema` field (real JSON Schema). Almost no conversion is needed. | Confirm root `type: object`, error on external `$ref`, notice that `minLength` is ignored |
+| `openai-strict` | OpenAI `strict: true` function calling | `additionalProperties: false` on every object, optional fields become required + nullable, free-form objects cannot be fixed |
+| `anthropic-strict` | Anthropic strict tool use | Move `minLength`, `minimum`, array constraints (`maxItems`, `uniqueItems`, `minItems` of 2 or more), `format` outside the supported list and `\b` patterns into descriptions; rename tools to `^[a-zA-Z0-9_-]{1,128}$` |
 
-규칙마다 심각도(error·warning·info), 자동 수정 여부, 공식 문서 URL 이 있고 전체는 [docs/rules.md](docs/rules.md) 에 있습니다. 규칙은 문서를 읽은 날(2026-11-10) 기준입니다.
+Each rule has a severity (error, warning, info), whether it is auto-fixable, and an official documentation URL; the full list is in [docs/rules.md](docs/rules.md). The rules are as of the day the documentation was read (2026-11-10).
 
-## 변환 지도와 복원
-변환 지도의 항목은 `op` 종류별로 복원 동작이 다릅니다.
+## Conversion map and restore
+The entries of the conversion map restore differently depending on the `op` kind.
 
-| `op` | 변환 내용 | 복원(restore) 동작 |
+| `op` | What the conversion does | Restore behavior |
 |---|---|---|
-| `nullable-optional` | 선택 필드를 필수 + `null` 허용으로 바꿈(OpenAI) | 값이 `null` 인 필드를 지워 "보내지 않음"으로 되돌림. 원래 스키마가 `null` 을 허용하면 기록하지 않고 `null` 유지 |
-| `enum-stringified` | `const`/숫자 enum 을 문자열로 바꿈(Gemini) | 지도의 `values` 로 원래 값(숫자 등)을 되돌림 |
-| `name-mapped` | 도구 이름을 제공자 규칙에 맞게 바꿈(`issues.search` → `issues_search`) | 원래 이름으로 되돌려 서버에 전달 |
-| `constraint-to-description` | `minLength`·`format` 등을 설명 문장으로 옮김(lossy) | 되돌릴 값은 없고, 마지막 원래 스키마 검증이 제약을 지킴 |
-| `dropped` | 지원하지 않는 키워드를 삭제(lossy) | 위와 같음 |
-| `all-of-merged` | `allOf` 객체 가지를 한 객체로 합침 | 위와 같음(정보 손실 없음) |
-| `one-of-to-any-of` | `oneOf` 를 `anyOf` 로 바꿈(lossy) | 위와 같음(배타성은 원래 스키마가 검사) |
+| `nullable-optional` | Turns an optional field into required + nullable (OpenAI) | Removes fields whose value is `null`, returning them to "not sent". If the original schema allows `null`, nothing is recorded and `null` is kept |
+| `enum-stringified` | Turns a `const`/numeric enum into strings (Gemini) | Restores the original values (numbers, etc.) using the map's `values` |
+| `name-mapped` | Renames the tool to fit the provider's rule (`issues.search` -> `issues_search`) | Restores the original name and passes it to the server |
+| `constraint-to-description` | Moves `minLength`, `format` and the like into a description sentence (lossy) | There is no value to restore; the final validation against the original schema enforces the constraint |
+| `dropped` | Deletes an unsupported keyword (lossy) | Same as above |
+| `all-of-merged` | Merges the `allOf` object branches into one object | Same as above (no information lost) |
+| `one-of-to-any-of` | Changes `oneOf` to `anyOf` (lossy) | Same as above (the original schema checks exclusivity) |
 
-복원의 마지막 단계는 항상 **원래 스키마로 검증**입니다. 그래서 설명으로 옮기거나 삭제한 제약도 서버에 닿기 전에 걸러집니다. 한계로, 검증 실패는 모델에게 `isError` 결과로 돌아가 다시 시도하게 하는 방식이라 모델이 고칠 수 없는 경우에는 반복될 수 있습니다.
+The last step of restore is always **validation against the original schema**. So constraints that were moved into descriptions or deleted are also caught before they reach the server. As a limit, a validation failure goes back to the model as an `isError` result so it retries, which means it can repeat when the model cannot fix the problem.
 
-## 동작 원리
+## How it works
 ```mermaid
 flowchart LR
-    C[MCP 클라이언트] -->|tools/list| S[shim]
-    S -->|tools/list| V[원래 서버]
-    V -->|원래 스키마| S
-    S -->|변환 스키마 + 지도| C
-    C -->|tools/call 변환 인자| S
-    S -->|복원 + 원래 스키마 검증| V
+    C["MCP client"] -->|tools/list| S[shim]
+    S -->|tools/list| V["Original server"]
+    V -->|"original schema"| S
+    S -->|"converted schema + map"| C
+    C -->|"tools/call converted args"| S
+    S -->|"restore + original schema validation"| V
 ```
-1. 서버의 도구 목록을 받으면, 선택한 프로필 규칙으로 스키마를 변환하고 "무엇을 바꿨는지" 지도를 만듭니다.
-2. 클라이언트(모델)는 변환된 스키마만 봅니다.
-3. 호출이 오면 지도로 `null` 제거·`const`/enum 문자열 되돌리기·이름 복원을 하고, **원래 스키마로 다시 검증**한 뒤에만 서버에 보냅니다.
-4. 검증에 실패하면 서버 대신 `isError` 결과로 이유를 돌려줘 모델이 다시 시도할 수 있게 합니다.
+1. When it receives the server's tool list, it converts the schemas with the chosen profile's rules and builds a map of "what was changed".
+2. The client (the model) sees only the converted schemas.
+3. When a call arrives, it uses the map to remove `null`, turn `const`/enum strings back, and restore names, then **validates again against the original schema** and only then sends it to the server.
+4. If validation fails, it returns the reason as an `isError` result instead of calling the server, so the model can retry.
 
-`check` 와 `fix` 와 프록시는 같은 규칙 엔진을 쓰므로, `check` 가 `fixable` 이라 한 것은 `fix` 가 반드시 고칩니다.
+`check`, `fix` and the proxy use the same rule engine, so whatever `check` calls `fixable` is certain to be fixed by `fix`.
 
-## 코드 둘러보기
+## A tour of the code
 ```
 src/
-  profiles/   제공자별 규칙(gemini-parameters·gemini-json-schema·openai-strict·anthropic-strict)과 공통 도구(common.ts)
-  rules/      규칙 목록과 공식 문서 URL(registry.ts, docs.ts)
-  check.ts    변환을 돌려 진단만 취함
-  transform.ts  도구 변환 + 변환 지도 만들기, 이름 충돌 처리
-  restore.ts  지도로 인자 되돌리기 + 원래 스키마(ajv)로 검증
-  proxy/      stdio JSON-RPC 프록시(proxy.ts, jsonrpc.ts)
-  simulate.ts  목 모델로 직결과 경유 비교(sample.ts 가 인자 생성)
-  cli.ts      check·fix·proxy·simulate 명령
+  profiles/   per-provider rules (gemini-parameters, gemini-json-schema, openai-strict, anthropic-strict) and shared tools (common.ts)
+  rules/      rule list and official documentation URLs (registry.ts, docs.ts)
+  check.ts    runs the conversion and takes only the diagnostics
+  transform.ts  converts tools + builds the conversion map, handles name collisions
+  restore.ts  restores arguments using the map + validates with the original schema (ajv)
+  proxy/      stdio JSON-RPC proxy (proxy.ts, jsonrpc.ts)
+  simulate.ts  compares direct and via-shim with a mock model (sample.ts generates arguments)
+  cli.ts      the check, fix, proxy and simulate commands
 ```
-호출 흐름은 이렇습니다.
+The call flow is as follows.
 
-1. `profiles/*.ts` 의 `transformSchema` 가 스키마를 훑으면서 진단(`ctx.emit`)과 변환·지도 기록(`ctx.record`)을 **같은 코드**에서 합니다. 그래서 `check`·`fix`·프록시의 판단이 어긋나지 않습니다(`src/check.ts`, `src/transform.ts`).
-2. `src/transform.ts` 의 `transformTools` 가 도구 목록 전체를 변환하고 지도를 만듭니다. 바뀌지 않는 이름을 먼저 예약해 이름 충돌을 피합니다.
-3. `src/restore.ts` 가 지도 항목을 적용(null 제거·enum 되돌림·이름 복원)한 뒤 원래 스키마로 검증합니다. 실패하면 `RestoreError`.
-4. `src/proxy/proxy.ts` 가 `tools/list` 응답은 변환하고 `tools/call` 요청은 `restore` 하며, 나머지 줄은 그대로 전달합니다.
+1. `transformSchema` in `profiles/*.ts` walks the schema and does the diagnostics (`ctx.emit`) and the conversion and map recording (`ctx.record`) in **the same code**. That is why the verdicts of `check`, `fix` and the proxy never disagree (`src/check.ts`, `src/transform.ts`).
+2. `transformTools` in `src/transform.ts` converts the whole tool list and builds the map. It reserves the names that do not change first, to avoid name collisions.
+3. `src/restore.ts` applies the map entries (remove null, restore enums, restore names) and then validates against the original schema. On failure, `RestoreError`.
+4. `src/proxy/proxy.ts` converts `tools/list` responses and `restore`s `tools/call` requests, and passes every other line through unchanged.
 
-## 한계
-- stdio 전송만 지원합니다(HTTP/SSE 프록시 없음).
-- 자유형 객체와 재귀 `$ref` 는 `openai-strict`·`anthropic-strict` 에서 못 고치는 오류, `gemini-parameters` 에서는 재귀 `$ref` 가 못 고치는 오류입니다.
-- 원래 스키마가 이미 `null` 을 허용하는 선택 필드는 `null` 을 그대로 둡니다(없음과 `null` 을 구분할 수 없음).
-- 첫 `tools/list` 이전에 온 `tools/call` 은 복원 없이 통과합니다(실제 클라이언트는 먼저 목록을 요청합니다).
-- 규칙은 2026-11-10 에 읽은 제공자 문서 기준이며 실제 API 로 검증하지 않았습니다. 제공자 규칙은 바뀔 수 있습니다.
+## Limits
+- Only the stdio transport is supported (no HTTP/SSE proxy).
+- Free-form objects and recursive `$ref` are unfixable errors in `openai-strict` and `anthropic-strict`; in `gemini-parameters`, recursive `$ref` is an unfixable error.
+- For an optional field whose original schema already allows `null`, `null` is left as is (absence and `null` cannot be told apart).
+- A `tools/call` that arrives before the first `tools/list` passes through without restore (real clients request the list first).
+- The rules are based on the provider documentation read on 2026-11-10 and have not been verified against the real APIs. Provider rules can change.
 
-## 언제 쓰나
-- 모델이 보낸 인자를 원래 스키마로 되돌려 검증해야 할 때(라이브러리 함수 `restore` 로 복원하고, CLI 명령 `simulate` 로 왕복 결과를 확인).
-- 기존 MCP 서버 앞에 stdio 프록시로 끼워 제공자별 스키마 규칙을 맞추고 싶을 때(`proxy`).
-- 스키마 검사·변환만 필요하다면 [tool-schema](https://github.com/slegarraga/tool-schema) 도 살펴보세요.
+## When to use it
+- When you need to turn the arguments the model sent back into the original schema and validate them (restore with the library function `restore`, and check the round trip with the CLI command `simulate`).
+- When you want to put a stdio proxy in front of an existing MCP server to meet each provider's schema rules (`proxy`).
+- If you only need schema checking and conversion, also look at [tool-schema](https://github.com/slegarraga/tool-schema).
 
-## 직접 바꿔 보기
-1. **프로필 바꾸기** — 바꿀 곳: `check` 의 `--profile` 을 `gemini-json-schema` 로. 예상: 오류·경고 없이 `minLength` 무시 안내(info) 2건만 나오고 종료 코드가 0 입니다. 확인: 표의 마지막 줄 `0 error(s), 0 warning(s), 2 info`.
-2. **예제 도구 수정** — 바꿀 곳: `examples/tools.json` 의 `limit` 두 곳에 `"multipleOf": 5` 를 추가. 예상: `check examples/tools.json --profile anthropic-strict` 의 마지막 줄이 `8 error(s)` 에서 `10 error(s)` 로 늘고(`unsupported-constraint`), `fix --map` 지도에 `constraint-to-description` 항목이 생깁니다. 확인: 표의 마지막 줄과 `map.json`.
-3. **복원 시험** — 바꿀 곳: `node dist/cli.js simulate --profile openai-strict --tool search_issues --args '{"query":"x","limit":0}' -- node examples/server-v1.mjs` 처럼 `limit` 을 0 으로. 예상: `limit` 은 원래 스키마에서 `minimum: 1` 이라서 `via shim: FAIL` 과 `/limit: must be >= 1 (minimum)` 이 나옵니다. 확인: 출력 마지막 세 줄.
+## Try changing it yourself
+1. **Change the profile** — where to change: set `check`'s `--profile` to `gemini-json-schema`. Expected: no errors or warnings, only 2 info notices that `minLength` is ignored, and exit code 0. Check: the last line of the table, `0 error(s), 0 warning(s), 2 info`.
+2. **Edit the example tools** — where to change: add `"multipleOf": 5` at the two `limit` places in `examples/tools.json`. Expected: the last line of `check examples/tools.json --profile anthropic-strict` grows from `8 error(s)` to `10 error(s)` (`unsupported-constraint`), and the `fix --map` map gains `constraint-to-description` entries. Check: the last line of the table and `map.json`.
+3. **Restore test** — where to change: set `limit` to 0, as in `node dist/cli.js simulate --profile openai-strict --tool search_issues --args '{"query":"x","limit":0}' -- node examples/server-v1.mjs`. Expected: `limit` has `minimum: 1` in the original schema, so you get `via shim: FAIL` and `/limit: must be >= 1 (minimum)`. Check: the last three lines of the output.
 
-## 자주 겪는 문제
-| 증상 | 원인 | 해결 |
+## Troubleshooting
+| Symptom | Cause | Fix |
 |---|---|---|
-| `Cannot find module .../dist/cli.js` | 빌드가 안 됨 | `npm run build` |
-| `fix` 가 exit 1 | 못 고치는 오류(재귀 `$ref`, 자유형 객체) 존재 | `check` 표의 `NOT fixable` 줄을 보고 스키마 수정 또는 다른 프로필 선택 |
-| `npm test` 가 버전 오류 | vitest 가 Node 22.12 이상 요구 | Node 업데이트(런타임만 쓰면 20 이상) |
-| `npm run demo` 의 직결이 항상 FAIL | 의도된 결과 | 직결 실패를 보여 주는 장면입니다 |
+| `Cannot find module .../dist/cli.js` | Not built | `npm run build` |
+| `fix` exits 1 | There are unfixable errors (recursive `$ref`, free-form objects) | Look at the `NOT fixable` lines in the `check` table and change the schema or pick another profile |
+| `npm test` gives a version error | vitest requires Node 22.12 or later | Update Node (20 or later if you only use the runtime) |
+| The direct run in `npm run demo` is always FAIL | Intended result | It is the scene showing the direct failure |
 
-## 개발·기여
+## Development and contributing
 ```bash
 npm test
 ```
-![npm test 결과](docs/images/06-test.png)
-*키·네트워크 없이 v1·v2 TypeScript SDK 서버 종단 시험까지 통과한다.*
+![npm test result](docs/images/06-test.png)
+*It passes, including the end-to-end tests with v1 and v2 TypeScript SDK servers, without keys or network.*
 
-버그·제안은 이슈로 남겨 주세요. 변경 기록은 [CHANGELOG.md](CHANGELOG.md).
+Please leave bugs and suggestions as issues. Change history is in [CHANGELOG.md](CHANGELOG.md).
 
-## 더 알아보기
-- OpenAI Structured Outputs: https://developers.openai.com/api/docs/guides/structured-outputs (2026-11-10 확인)
-- Anthropic Structured Outputs: https://platform.claude.com/docs/en/build-with-claude/structured-outputs (2026-11-10 확인)
-- Gemini function calling: https://aistudio.google.com/docs/function-calling (2026-11-10 확인)
+## Learn more
+- OpenAI Structured Outputs: https://developers.openai.com/api/docs/guides/structured-outputs (checked 2026-11-10)
+- Anthropic Structured Outputs: https://platform.claude.com/docs/en/build-with-claude/structured-outputs (checked 2026-11-10)
+- Gemini function calling: https://aistudio.google.com/docs/function-calling (checked 2026-11-10)
 
-## 라이선스
-MIT. 외부 모델·데이터는 포함하지 않습니다.
+## License
+MIT. No external models or data are included.
