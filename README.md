@@ -1,5 +1,7 @@
 # mcp-schema-shim
 
+**한국어** | [English](README.en.md)
+
 > **English summary** — mcp-schema-shim checks MCP tool input schemas against the function-calling rules of Gemini, OpenAI strict mode and Anthropic strict tool use, rewrites them to fit, and restores the arguments the model sends back to the original schema shape (so `null` placeholders and renamed tools do not break your server). Use it as a stdio proxy in front of an MCP server, as a CI check, or as a library. Try it with no API key: `git clone https://github.com/LeeGyeongPil/mcp-schema-shim && cd mcp-schema-shim && npm install && npm run demo` (the demo uses a practice mock model; no LLM is called).
 
 MCP 서버의 도구 정의(JSON Schema)를 모델 제공자(Gemini·OpenAI strict·Anthropic strict)가 받아 주는 모양으로 고쳐 주고, 모델이 고친 스키마대로 보낸 인자를 **원래 서버가 받는 모양으로 되돌려 주는** 도구입니다.
