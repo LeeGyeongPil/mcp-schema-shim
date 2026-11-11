@@ -60,6 +60,8 @@ npm run demo
 | `proxy --profile <id> -- <server command>` | A proxy placed in front of a stdio MCP server | `node dist/cli.js proxy --profile gemini-parameters -- node examples/server-v1.mjs` |
 | `simulate --profile <id> [--tool n] [--args json] -- <server command>` | Compare direct vs via shim with a mock model | `npm run demo` |
 
+Since 0.3.0, a large server can fail `check` with exit 1 under `anthropic-strict`: more than 20 tools (`anthropic-strict/limit-tools`) or more than 24 optional parameters in total (`anthropic-strict/limit-optional`) are rejected by the API, so they are reported as `(all tools)` errors that `fix` cannot repair. The messages read `21 strict tools in one request (limit 20)` and `25 optional parameters across all strict tool schemas (limit 24)`.
+
 Exit codes: `0` normal, `1` error-level diagnostics (check) or an unfixable error (fix), `2` input or usage error (with a server command, also when the server cannot be started, times out or answers with an error). `simulate` returns `0` regardless of the comparison result (including `via shim: FAIL`), and `2` only for input errors. The input file is `{"tools":[…]}` (the `tools/list` result) or an array of tools (file mode), or a stdio server command after `--` (server mode).
 
 Profiles: `gemini-parameters` (the old `parameters` field, an OpenAPI subset), `gemini-json-schema` (`parametersJsonSchema`), `openai-strict`, `anthropic-strict`.
@@ -80,6 +82,9 @@ npx mcp-schema-shim check --all --format markdown -- node build/server.js
 ```
 ![check run directly against a server command](docs/images/07-check-server.png)
 *`check` started the example server, read its tool list and printed the same table (exit 1 because there are errors).*
+
+![21 tools in one request: limit-tools error, exit 1](docs/images/08-check-limit-tools.png)
+*A list of 21 valid tools passes every per-tool rule, but `check` reports `anthropic-strict/limit-tools` (the request limit is 20) and exits 1.*
 
 In CI one line is enough: `npx mcp-schema-shim check --profile openai-strict -- node build/server.js` (the step fails on exit 1). The server's own log lines go to stderr, so `--format json` on stdout stays valid.
 
@@ -180,9 +185,9 @@ A profile is "which provider, through which path, you will send to". Pick it wit
 | `gemini-parameters` | The old `parameters` field of Gemini function declarations (an OpenAPI subset). If one tool is wrong, the whole request fails. | Inline `$ref`, stringify `const`/numeric enums, turn `type: ["string","null"]` into `nullable` |
 | `gemini-json-schema` | The new `parametersJsonSchema` field (real JSON Schema). Almost no conversion is needed. | Confirm root `type: object`, error on external `$ref`, notice that `minLength` is ignored |
 | `openai-strict` | OpenAI `strict: true` function calling | `additionalProperties: false` on every object, optional fields become required + nullable, free-form objects cannot be fixed |
-| `anthropic-strict` | Anthropic strict tool use | Move `minLength`, `minimum`, array constraints (`maxItems`, `uniqueItems`, `minItems` of 2 or more), `format` outside the supported list and `\b` patterns into descriptions; rename tools to `^[a-zA-Z0-9_-]{1,128}$` |
+| `anthropic-strict` | Anthropic strict tool use | Move `minLength`, `minimum`, array constraints (`maxItems`, `uniqueItems`, `minItems` of 2 or more), `format` outside the supported list and `\b` patterns into descriptions; rename tools to `^[a-zA-Z0-9_-]{1,128}$`. Request limits: at most 20 strict tools and 24 optional parameters per request (NOT fixable) |
 
-Each rule has a severity (error, warning, info), whether it is auto-fixable, and an official documentation URL; the full list is in [docs/rules.md](docs/rules.md). The rules are as of the day the documentation was read (2026-11-10).
+Each rule has a severity (error, warning, info), whether it is auto-fixable, and an official documentation URL; the full list is in [docs/rules.md](docs/rules.md). The rules are as of the day the documentation was read (2026-11-10); the two request limits (20 strict tools, 24 optional parameters) were checked separately against the Anthropic Structured Outputs documentation on 2026-11-12.
 
 ## Conversion map and restore
 The entries of the conversion map restore differently depending on the `op` kind.
@@ -241,7 +246,8 @@ The call flow is as follows.
 - Free-form objects and recursive `$ref` are unfixable errors in `openai-strict` and `anthropic-strict`; in `gemini-parameters`, recursive `$ref` is an unfixable error.
 - For an optional field whose original schema already allows `null`, `null` is left as is (absence and `null` cannot be told apart).
 - A `tools/call` that arrives before the first `tools/list` passes through without restore (real clients request the list first).
-- The rules are based on the provider documentation read on 2026-11-10 and have not been verified against the real APIs. Provider rules can change.
+- The `anthropic-strict` request limits (`limit-tools` above 20, `limit-optional` above 24) count optional parameters at every nesting level and apply to one server, that is one request. The proxy counts per `tools/list` page, only logs the finding and does not reduce the tools.
+- The rules are based on the provider documentation read on 2026-11-10 (the two request limits on 2026-11-12) and have not been verified against the real APIs. Provider rules can change.
 
 ## When to use it
 - When you need to turn the arguments the model sent back into the original schema and validate them (restore with the library function `restore`, and check the round trip with the CLI command `simulate`).
@@ -260,7 +266,7 @@ The call flow is as follows.
 | `Could not start the server command ...` (exit 2) | The command after `--` does not exist or is not executable | Run the same command by hand; use a path relative to where you run `check` |
 | `The server did not answer ... within ... ms` (exit 2) | The server is slow to start or does not speak MCP on stdout | Raise `--timeout`; make sure logs go to stderr, not stdout |
 | `The server exited (code N) before tools/list finished` (exit 2) | The server died right away (wrong script path, or an error in the server itself) | Read the stderr lines just above it; run the same command by hand and check the path |
-| `fix` exits 1 | There are unfixable errors (recursive `$ref`, free-form objects) | Look at the `NOT fixable` lines in the `check` table and change the schema or pick another profile |
+| `fix` exits 1 | There are unfixable errors (recursive `$ref`, free-form objects) | Look at the `NOT fixable` lines in the `check` table and change the schema or pick another profile. Even with exit 1, `fix` still writes the `-o` and `--map` files |
 | `npm test` gives a version error | vitest requires Node 22.12 or later | Update Node (20 or later if you only use the runtime) |
 | The direct run in `npm run demo` is always FAIL | Intended result | It is the scene showing the direct failure |
 
@@ -275,7 +281,7 @@ Please leave bugs and suggestions as issues. Change history is in [CHANGELOG.md]
 
 ## Learn more
 - OpenAI Structured Outputs: https://developers.openai.com/api/docs/guides/structured-outputs (checked 2026-11-10)
-- Anthropic Structured Outputs: https://platform.claude.com/docs/en/build-with-claude/structured-outputs (checked 2026-11-10)
+- Anthropic Structured Outputs: https://platform.claude.com/docs/en/build-with-claude/structured-outputs (checked 2026-11-10; request limits re-checked 2026-11-12)
 - Gemini function calling: https://aistudio.google.com/docs/function-calling (checked 2026-11-10)
 
 ## License

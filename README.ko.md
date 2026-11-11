@@ -60,6 +60,8 @@ npm run demo
 | `proxy --profile <id> -- <서버 명령>` | stdio MCP 서버 앞에 끼우는 프록시 | `node dist/cli.js proxy --profile gemini-parameters -- node examples/server-v1.mjs` |
 | `simulate --profile <id> [--tool n] [--args json] -- <서버 명령>` | 목 모델로 직결 vs shim 경유 비교 | `npm run demo` |
 
+0.3.0 부터 큰 서버는 `anthropic-strict` 에서 `check` 가 exit 1 로 실패할 수 있습니다. 도구가 20개를 넘거나(`anthropic-strict/limit-tools`) 선택 파라미터가 전체 24개를 넘으면(`anthropic-strict/limit-optional`) API 가 거부하므로, `(all tools)` 오류로 보고되며 `fix` 로 고칠 수 없습니다. 메시지 원문 예: `21 strict tools in one request (limit 20)` (요청 하나에 strict 도구 21개, 한도 20), `25 optional parameters across all strict tool schemas (limit 24)` (모든 strict 도구 스키마의 선택 파라미터 25개, 한도 24).
+
 종료 코드: `0` 정상, `1` 오류 등급 진단(check) 또는 못 고치는 오류(fix), `2` 입력·사용법 오류(서버 명령을 줄 때는 서버 기동 실패·타임아웃·오류 응답도 2). `simulate` 는 비교 결과(`via shim: FAIL` 포함)와 무관하게 `0`, 입력 오류만 `2` 입니다. 입력 파일은 `{"tools":[…]}`(`tools/list` 결과) 또는 도구 배열(파일 모드)이고, 서버 모드에서는 `--` 뒤에 stdio 서버 명령을 줍니다.
 
 프로필: `gemini-parameters`(옛 `parameters` 필드, OpenAPI 부분집합), `gemini-json-schema`(`parametersJsonSchema`), `openai-strict`, `anthropic-strict`.
@@ -80,6 +82,9 @@ npx mcp-schema-shim check --all --format markdown -- node build/server.js
 ```
 ![서버 명령에 직접 실행한 check](docs/images/07-check-server.png)
 *`check` 가 예제 서버를 띄워 도구 목록을 읽고 같은 표를 출력했습니다(오류가 있어 exit 1).*
+
+![한 요청에 도구 21개: limit-tools 오류, exit 1](docs/images/08-check-limit-tools.png)
+*도구 21개는 개별 규칙을 모두 통과하지만, `check` 는 `anthropic-strict/limit-tools`(요청당 한도 20)를 보고하고 exit 1 로 끝납니다. 메시지는 영어 원문입니다.*
 
 CI 에서는 한 줄이면 됩니다: `npx mcp-schema-shim check --profile openai-strict -- node build/server.js`(exit 1 이면 단계가 실패). 서버 자체의 로그는 stderr 로 나가므로 stdout 의 `--format json` 은 깨지지 않습니다.
 
@@ -178,9 +183,9 @@ node examples/library.mjs
 | `gemini-parameters` | Gemini 함수 선언의 옛 `parameters` 필드(OpenAPI 부분집합). 도구 하나가 틀리면 요청 전체가 실패합니다. | `$ref` 펼치기, `const`/숫자 enum 문자열화, `type: ["string","null"]` 를 `nullable` 로 |
 | `gemini-json-schema` | 새 `parametersJsonSchema` 필드(진짜 JSON Schema). 변환이 거의 필요 없습니다. | 루트 `type: object` 확인, 외부 `$ref` 오류, `minLength` 무시 안내 |
 | `openai-strict` | OpenAI `strict: true` 함수 호출 | 모든 객체에 `additionalProperties: false`, 선택 필드를 필수 + `null` 허용으로, 자유형 객체는 고칠 수 없음 |
-| `anthropic-strict` | Anthropic strict 도구 사용 | `minLength`·`minimum`·배열 제약(`maxItems`·`uniqueItems`·`minItems` 2 이상)·지원 목록 밖 `format`·`\b` 패턴을 설명으로 옮기기, 도구 이름 `^[a-zA-Z0-9_-]{1,128}$` 로 바꾸기 |
+| `anthropic-strict` | Anthropic strict 도구 사용 | `minLength`·`minimum`·배열 제약(`maxItems`·`uniqueItems`·`minItems` 2 이상)·지원 목록 밖 `format`·`\b` 패턴을 설명으로 옮기기, 도구 이름 `^[a-zA-Z0-9_-]{1,128}$` 로 바꾸기. 요청 한도: 요청당 strict 도구 최대 20개, 선택(optional) 파라미터 최대 24개(자동 수정 불가) |
 
-규칙마다 심각도(error·warning·info), 자동 수정 여부, 공식 문서 URL 이 있고 전체는 [docs/rules.md](docs/rules.md) 에 있습니다. 규칙은 문서를 읽은 날(2026-11-10) 기준입니다.
+규칙마다 심각도(error·warning·info), 자동 수정 여부, 공식 문서 URL 이 있고 전체는 [docs/rules.md](docs/rules.md) 에 있습니다. 규칙은 문서를 읽은 날(2026-11-10) 기준이고, 요청 한도 두 개(strict 도구 20개, 선택 파라미터 24개)만 2026-11-12 에 Anthropic Structured Outputs 문서로 따로 확인했습니다.
 
 ## 변환 지도와 복원
 변환 지도의 항목은 `op` 종류별로 복원 동작이 다릅니다.
@@ -239,7 +244,8 @@ src/
 - 자유형 객체와 재귀 `$ref` 는 `openai-strict`·`anthropic-strict` 에서 못 고치는 오류, `gemini-parameters` 에서는 재귀 `$ref` 가 못 고치는 오류입니다.
 - 원래 스키마가 이미 `null` 을 허용하는 선택 필드는 `null` 을 그대로 둡니다(없음과 `null` 을 구분할 수 없음).
 - 첫 `tools/list` 이전에 온 `tools/call` 은 복원 없이 통과합니다(실제 클라이언트는 먼저 목록을 요청합니다).
-- 규칙은 2026-11-10 에 읽은 제공자 문서 기준이며 실제 API 로 검증하지 않았습니다. 제공자 규칙은 바뀔 수 있습니다.
+- `anthropic-strict` 요청 한도(`limit-tools` 20 초과, `limit-optional` 24 초과)는 중첩 객체까지 선택 파라미터를 세고, 서버 하나(= 요청 하나) 기준입니다. 프록시는 `tools/list` 페이지 단위로 세고 로그만 남기며 도구를 줄이지 않습니다.
+- 규칙은 2026-11-10(요청 한도 두 개는 2026-11-12)에 읽은 제공자 문서 기준이며 실제 API 로 검증하지 않았습니다. 제공자 규칙은 바뀔 수 있습니다.
 
 ## 언제 쓰나
 - 모델이 보낸 인자를 원래 스키마로 되돌려 검증해야 할 때(라이브러리 함수 `restore` 로 복원하고, CLI 명령 `simulate` 로 왕복 결과를 확인).
@@ -258,7 +264,7 @@ src/
 | `Could not start the server command ...` (exit 2, 서버 명령을 시작하지 못함) | `--` 뒤 명령이 없거나 실행할 수 없음 | 같은 명령을 직접 실행해 보고, `check` 를 실행하는 위치 기준 경로를 쓰세요 |
 | `The server did not answer ... within ... ms` (exit 2, 서버가 제한 시간 안에 응답하지 않음) | 서버 시작이 느리거나 stdout 으로 MCP 를 말하지 않음 | `--timeout` 을 늘리고, 로그는 stdout 이 아니라 stderr 로 내보내세요 |
 | `The server exited (code N) before tools/list finished` (exit 2, `tools/list` 가 끝나기 전에 서버가 종료됨) | 서버가 바로 죽음(스크립트 경로 오타, 서버 자체 오류) | 바로 위 stderr 를 읽고, 같은 명령을 직접 실행해 경로를 확인하세요 |
-| `fix` 가 exit 1 | 못 고치는 오류(재귀 `$ref`, 자유형 객체) 존재 | `check` 표의 `NOT fixable` 줄을 보고 스키마 수정 또는 다른 프로필 선택 |
+| `fix` 가 exit 1 | 못 고치는 오류(재귀 `$ref`, 자유형 객체) 존재 | `check` 표의 `NOT fixable` 줄을 보고 스키마 수정 또는 다른 프로필 선택. exit 1 이어도 `fix` 는 `-o`·`--map` 파일을 씁니다 |
 | `npm test` 가 버전 오류 | vitest 가 Node 22.12 이상 요구 | Node 업데이트(런타임만 쓰면 20 이상) |
 | `npm run demo` 의 직결이 항상 FAIL | 의도된 결과 | 직결 실패를 보여 주는 장면입니다 |
 
@@ -273,7 +279,7 @@ npm test
 
 ## 더 알아보기
 - OpenAI Structured Outputs: https://developers.openai.com/api/docs/guides/structured-outputs (2026-11-10 확인)
-- Anthropic Structured Outputs: https://platform.claude.com/docs/en/build-with-claude/structured-outputs (2026-11-10 확인)
+- Anthropic Structured Outputs: https://platform.claude.com/docs/en/build-with-claude/structured-outputs (2026-11-10 확인, 요청 한도는 2026-11-12 재확인)
 - Gemini function calling: https://aistudio.google.com/docs/function-calling (2026-11-10 확인)
 
 ## 라이선스
