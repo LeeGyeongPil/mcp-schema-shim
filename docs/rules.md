@@ -68,7 +68,7 @@ Documentation: https://developers.openai.com/api/docs/guides/structured-outputs
 
 ## `anthropic-strict`
 
-Anthropic strict tool use. `strict: true` tools reject numeric/length constraints and complex patterns, and tool names must match ^[a-zA-Z0-9_-]{1,128}$.
+Anthropic strict tool use. `strict: true` tools reject numeric/length constraints and complex patterns, and tool names must match ^[a-zA-Z0-9_-]{1,128}$. Request limits: at most 20 strict tools and 24 optional parameters in total.
 
 Documentation: https://platform.claude.com/docs/en/build-with-claude/structured-outputs
 
@@ -84,3 +84,5 @@ Documentation: https://platform.claude.com/docs/en/build-with-claude/structured-
 | `anthropic-strict/tool-name` | error | yes | Tool names must match ^[a-zA-Z0-9_-]{1,128}$; the name is rewritten and the proxy maps it back. | https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use |
 | `anthropic-strict/root-type` | warning | yes | The root schema needs type "object". | https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use |
 | `anthropic-strict/root-object` | error | no | The root schema must be an object schema. | https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use |
+| `anthropic-strict/limit-tools` | error | no | At most 20 strict tools are allowed in one request (docs: "Maximum number of tools with `strict: true`"). Counted over the whole tool list. | https://platform.claude.com/docs/en/build-with-claude/structured-outputs |
+| `anthropic-strict/limit-optional` | error | no | At most 24 optional parameters are allowed across all strict tool schemas in one request (docs: "Each parameter not listed in `required` counts toward this limit"). Counted at every nesting level over the whole tool list. | https://platform.claude.com/docs/en/build-with-claude/structured-outputs |
