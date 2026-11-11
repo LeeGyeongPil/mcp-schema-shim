@@ -55,11 +55,12 @@ npm run demo
 | 명령 | 하는 일 | 예 |
 |---|---|---|
 | `check <tools.json> --profile <id>` / `--all` | 제공자 규칙 위반을 진단표로 출력(오류가 있으면 exit 1) | `node dist/cli.js check examples/tools.json --all` |
+| `check --profile <id>` / `--all` `[--timeout ms]` `-- <서버 명령>` | 같은 검사를, 직접 띄운 stdio 서버에서 `tools/list`(모든 페이지)를 받아 수행 | `node dist/cli.js check --profile openai-strict -- node examples/server-v1.mjs` |
 | `fix <tools.json> --profile <id> [--map f] [-o f]` | 변환된 도구 JSON 과 변환 지도 저장 | `node dist/cli.js fix examples/tools.json --profile openai-strict --map map.json` |
 | `proxy --profile <id> -- <서버 명령>` | stdio MCP 서버 앞에 끼우는 프록시 | `node dist/cli.js proxy --profile gemini-parameters -- node examples/server-v1.mjs` |
 | `simulate --profile <id> [--tool n] [--args json] -- <서버 명령>` | 목 모델로 직결 vs shim 경유 비교 | `npm run demo` |
 
-종료 코드: `0` 정상, `1` 오류 등급 진단(check) 또는 못 고치는 오류(fix), `2` 입력·사용법 오류. `simulate` 는 비교 결과(`via shim: FAIL` 포함)와 무관하게 `0`, 입력 오류만 `2` 입니다. 입력 파일은 `{"tools":[…]}`(`tools/list` 결과) 또는 도구 배열입니다.
+종료 코드: `0` 정상, `1` 오류 등급 진단(check) 또는 못 고치는 오류(fix), `2` 입력·사용법 오류(서버 명령을 줄 때는 서버 기동 실패·타임아웃·오류 응답도 2). `simulate` 는 비교 결과(`via shim: FAIL` 포함)와 무관하게 `0`, 입력 오류만 `2` 입니다. 입력 파일은 `{"tools":[…]}`(`tools/list` 결과) 또는 도구 배열(파일 모드)이고, 서버 모드에서는 `--` 뒤에 stdio 서버 명령을 줍니다.
 
 프로필: `gemini-parameters`(옛 `parameters` 필드, OpenAPI 부분집합), `gemini-json-schema`(`parametersJsonSchema`), `openai-strict`, `anthropic-strict`.
 
@@ -71,6 +72,16 @@ node dist/cli.js check examples/tools.json --profile openai-strict
 *규칙 ID, 도구 이름, JSON 포인터(`/properties/limit`), 자동 수정 가능 여부, 공식 문서 URL 이 한 줄씩 나온다. 이 예는 10 오류·1 경고라서 exit 1.*
 
 읽는 법: `fixable` 이면 `fix`/프록시가 고칠 수 있다는 뜻입니다. `NOT fixable` 은 사람이 스키마를 바꿔야 합니다. `--all --format markdown` 으로 모든 프로필 결과를 표로 받아 CI 에 붙일 수 있습니다(예제 도구 기준 합계 `22 error(s), 5 warning(s), 2 info`).
+
+파일 대신 서버를 직접 검사할 수도 있습니다. `--` 뒤에 서버 시작 명령을 주면 `check` 가 서버를 띄워 `tools/list` 를 모든 페이지 읽고, 서버를 종료한 뒤 같은 표를 출력합니다.
+```bash
+node dist/cli.js check --profile openai-strict -- node examples/server-v1.mjs
+npx mcp-schema-shim check --all --format markdown -- node build/server.js
+```
+![서버 명령에 직접 실행한 check](docs/images/07-check-server.png)
+*`check` 가 예제 서버를 띄워 도구 목록을 읽고 같은 표를 출력했습니다(오류가 있어 exit 1).*
+
+CI 에서는 한 줄이면 됩니다: `npx mcp-schema-shim check --profile openai-strict -- node build/server.js`(exit 1 이면 단계가 실패). 서버 자체의 로그는 stderr 로 나가므로 stdout 의 `--format json` 은 깨지지 않습니다.
 
 ### 2) 고치고 변환 지도 보기
 ```bash
@@ -157,7 +168,7 @@ node examples/library.mjs
 | 타입 | 타입 | `ProfileId`, `JsonSchema`, `McpTool`, `Severity`, `Diagnostic`, `MapOp`, `MapEntry`, `ToolMap`, `ShimMap`, `TransformOptions`, `TransformResult`, `TransformToolResult`, `RestoreIssue`, `ProfileInfo`, `RuleDef` |
 
 ## 설정
-설정 파일·환경변수·API 키는 없습니다. 동작은 `--profile` 과 위 옵션으로만 정해집니다. 규칙 전체 목록(규칙마다 공식 문서 URL·확인 날짜)은 [docs/rules.md](docs/rules.md) 에 있습니다.
+설정 파일·환경변수·API 키는 없습니다. 동작은 `--profile` 과 위 옵션으로만 정해집니다. 서버 명령을 줄 때 `--timeout <ms>`(기본 `10000`)는 `check` 가 응답마다 기다리는 시간이며, 파일 모드에서 주면 오류입니다. 규칙 전체 목록(규칙마다 공식 문서 URL·확인 날짜)은 [docs/rules.md](docs/rules.md) 에 있습니다.
 
 ## 프로필과 규칙
 프로필은 "어느 제공자의 어느 경로로 보낼 것인가"입니다. `--profile` 로 고릅니다.
@@ -213,6 +224,7 @@ src/
   restore.ts  지도로 인자 되돌리기 + 원래 스키마(ajv)로 검증
   proxy/      stdio JSON-RPC 프록시(proxy.ts, jsonrpc.ts)
   simulate.ts  목 모델로 직결과 경유 비교(sample.ts 가 인자 생성)
+  rpc-client.ts  stdio JSON-RPC 클라이언트: 서버를 띄우고 check 용으로 tools/list 모든 페이지를 읽으며 자식 프로세스를 항상 종료(simulate, check)
   cli.ts      check·fix·proxy·simulate 명령
 ```
 호출 흐름은 이렇습니다.
@@ -223,7 +235,7 @@ src/
 4. `src/proxy/proxy.ts` 가 `tools/list` 응답은 변환하고 `tools/call` 요청은 `restore` 하며, 나머지 줄은 그대로 전달합니다.
 
 ## 한계
-- stdio 전송만 지원합니다(HTTP/SSE 프록시 없음).
+- stdio 전송만 지원합니다(HTTP/SSE 프록시 없음). 서버 명령으로 하는 `check` 도 stdio 서버만, `fix` 는 파일 입력만 받습니다.
 - 자유형 객체와 재귀 `$ref` 는 `openai-strict`·`anthropic-strict` 에서 못 고치는 오류, `gemini-parameters` 에서는 재귀 `$ref` 가 못 고치는 오류입니다.
 - 원래 스키마가 이미 `null` 을 허용하는 선택 필드는 `null` 을 그대로 둡니다(없음과 `null` 을 구분할 수 없음).
 - 첫 `tools/list` 이전에 온 `tools/call` 은 복원 없이 통과합니다(실제 클라이언트는 먼저 목록을 요청합니다).
@@ -243,6 +255,9 @@ src/
 | 증상 | 원인 | 해결 |
 |---|---|---|
 | `Cannot find module .../dist/cli.js` | 빌드가 안 됨 | `npm run build` |
+| `Could not start the server command ...` (exit 2, 서버 명령을 시작하지 못함) | `--` 뒤 명령이 없거나 실행할 수 없음 | 같은 명령을 직접 실행해 보고, `check` 를 실행하는 위치 기준 경로를 쓰세요 |
+| `The server did not answer ... within ... ms` (exit 2, 서버가 제한 시간 안에 응답하지 않음) | 서버 시작이 느리거나 stdout 으로 MCP 를 말하지 않음 | `--timeout` 을 늘리고, 로그는 stdout 이 아니라 stderr 로 내보내세요 |
+| `The server exited (code N) before tools/list finished` (exit 2, `tools/list` 가 끝나기 전에 서버가 종료됨) | 서버가 바로 죽음(스크립트 경로 오타, 서버 자체 오류) | 바로 위 stderr 를 읽고, 같은 명령을 직접 실행해 경로를 확인하세요 |
 | `fix` 가 exit 1 | 못 고치는 오류(재귀 `$ref`, 자유형 객체) 존재 | `check` 표의 `NOT fixable` 줄을 보고 스키마 수정 또는 다른 프로필 선택 |
 | `npm test` 가 버전 오류 | vitest 가 Node 22.12 이상 요구 | Node 업데이트(런타임만 쓰면 20 이상) |
 | `npm run demo` 의 직결이 항상 FAIL | 의도된 결과 | 직결 실패를 보여 주는 장면입니다 |

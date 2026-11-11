@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-12
+
+### Added
+- `check` can run a stdio MCP server directly: `mcp-schema-shim check --profile <id> -- <server command> [args...]`. It sends `initialize`, reads every `tools/list` page (following `nextCursor`), stops the server and prints the same report and exit code as file mode.
+- `--timeout <ms>` (default 10000) for the server mode of `check`. Start failures, timeouts, early server exits and MCP error responses end with exit 2 and a message that says what to change, never exit 70.
+- The server child process is always stopped (stdin closed, then SIGTERM, then SIGKILL after one second each), so a silent server cannot hang `check`.
+
+### Known limitations
+- `check` with a server command supports stdio servers only; `fix` still reads files only.
+- `simulate` with a missing command still ends with exit 70 and a stack trace.
+- The `npm test` screenshot (`docs/images/06-test.png`) still shows the 0.1.0 output and 37 tests; the current run is 54 tests.
+
 ## [0.1.2] - 2026-11-11
 
 ### Fixed

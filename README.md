@@ -55,11 +55,12 @@ npm run demo
 | Command | What it does | Example |
 |---|---|---|
 | `check <tools.json> --profile <id>` / `--all` | Print provider rule violations as a diagnostics table (exit 1 if there are errors) | `node dist/cli.js check examples/tools.json --all` |
+| `check --profile <id>` / `--all` `[--timeout ms]` `-- <server command>` | Same check, but fetch `tools/list` (all pages) from a stdio server you start | `node dist/cli.js check --profile openai-strict -- node examples/server-v1.mjs` |
 | `fix <tools.json> --profile <id> [--map f] [-o f]` | Save the converted tools JSON and the conversion map | `node dist/cli.js fix examples/tools.json --profile openai-strict --map map.json` |
 | `proxy --profile <id> -- <server command>` | A proxy placed in front of a stdio MCP server | `node dist/cli.js proxy --profile gemini-parameters -- node examples/server-v1.mjs` |
 | `simulate --profile <id> [--tool n] [--args json] -- <server command>` | Compare direct vs via shim with a mock model | `npm run demo` |
 
-Exit codes: `0` normal, `1` error-level diagnostics (check) or an unfixable error (fix), `2` input or usage error. `simulate` returns `0` regardless of the comparison result (including `via shim: FAIL`), and `2` only for input errors. The input file is `{"tools":[…]}` (the `tools/list` result) or an array of tools.
+Exit codes: `0` normal, `1` error-level diagnostics (check) or an unfixable error (fix), `2` input or usage error (with a server command, also when the server cannot be started, times out or answers with an error). `simulate` returns `0` regardless of the comparison result (including `via shim: FAIL`), and `2` only for input errors. The input file is `{"tools":[…]}` (the `tools/list` result) or an array of tools (file mode), or a stdio server command after `--` (server mode).
 
 Profiles: `gemini-parameters` (the old `parameters` field, an OpenAPI subset), `gemini-json-schema` (`parametersJsonSchema`), `openai-strict`, `anthropic-strict`.
 
@@ -71,6 +72,16 @@ node dist/cli.js check examples/tools.json --profile openai-strict
 *Each line shows the rule ID, tool name, JSON pointer (`/properties/limit`), whether it can be fixed automatically, and the official documentation URL. This example has 10 errors and 1 warning, so exit 1.*
 
 How to read it: `fixable` means `fix` or the proxy can fix it. `NOT fixable` means a person has to change the schema. With `--all --format markdown` you can get the results of all profiles as a table and paste it into CI (for the example tools the total is `22 error(s), 5 warning(s), 2 info`).
+
+Instead of a file you can check a running server directly: put its start command after `--`. `check` starts it, reads every `tools/list` page, stops it, and prints the same table.
+```bash
+node dist/cli.js check --profile openai-strict -- node examples/server-v1.mjs
+npx mcp-schema-shim check --all --format markdown -- node build/server.js
+```
+![check run directly against a server command](docs/images/07-check-server.png)
+*`check` started the example server, read its tool list and printed the same table (exit 1 because there are errors).*
+
+In CI one line is enough: `npx mcp-schema-shim check --profile openai-strict -- node build/server.js` (the step fails on exit 1). The server's own log lines go to stderr, so `--format json` on stdout stays valid.
 
 ### 2) Fix and view the conversion map
 ```bash
@@ -159,7 +170,7 @@ Public API (everything exported from `src/index.ts`):
 | Types | types | `ProfileId`, `JsonSchema`, `McpTool`, `Severity`, `Diagnostic`, `MapOp`, `MapEntry`, `ToolMap`, `ShimMap`, `TransformOptions`, `TransformResult`, `TransformToolResult`, `RestoreIssue`, `ProfileInfo`, `RuleDef` |
 
 ## Configuration
-There are no configuration files, environment variables or API keys. Behavior is set only by `--profile` and the options above. The full rule list (with an official documentation URL and check date for each rule) is in [docs/rules.md](docs/rules.md).
+There are no configuration files, environment variables or API keys. Behavior is set only by `--profile` and the options above. With a server command, `--timeout <ms>` (default `10000`) is how long `check` waits for each answer; it is an error in file mode. The full rule list (with an official documentation URL and check date for each rule) is in [docs/rules.md](docs/rules.md).
 
 ## Profiles and rules
 A profile is "which provider, through which path, you will send to". Pick it with `--profile`.
@@ -215,6 +226,7 @@ src/
   restore.ts  restores arguments using the map + validates with the original schema (ajv)
   proxy/      stdio JSON-RPC proxy (proxy.ts, jsonrpc.ts)
   simulate.ts  compares direct and via-shim with a mock model (sample.ts generates arguments)
+  rpc-client.ts  stdio JSON-RPC client: starts a server, reads every tools/list page for check, always stops the child (simulate, check)
   cli.ts      the check, fix, proxy and simulate commands
 ```
 The call flow is as follows.
@@ -225,7 +237,7 @@ The call flow is as follows.
 4. `src/proxy/proxy.ts` converts `tools/list` responses and `restore`s `tools/call` requests, and passes every other line through unchanged.
 
 ## Limits
-- Only the stdio transport is supported (no HTTP/SSE proxy).
+- Only the stdio transport is supported (no HTTP/SSE proxy). `check` with a server command is stdio only, and `fix` reads files only.
 - Free-form objects and recursive `$ref` are unfixable errors in `openai-strict` and `anthropic-strict`; in `gemini-parameters`, recursive `$ref` is an unfixable error.
 - For an optional field whose original schema already allows `null`, `null` is left as is (absence and `null` cannot be told apart).
 - A `tools/call` that arrives before the first `tools/list` passes through without restore (real clients request the list first).
@@ -245,6 +257,9 @@ The call flow is as follows.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `Cannot find module .../dist/cli.js` | Not built | `npm run build` |
+| `Could not start the server command ...` (exit 2) | The command after `--` does not exist or is not executable | Run the same command by hand; use a path relative to where you run `check` |
+| `The server did not answer ... within ... ms` (exit 2) | The server is slow to start or does not speak MCP on stdout | Raise `--timeout`; make sure logs go to stderr, not stdout |
+| `The server exited (code N) before tools/list finished` (exit 2) | The server died right away (wrong script path, or an error in the server itself) | Read the stderr lines just above it; run the same command by hand and check the path |
 | `fix` exits 1 | There are unfixable errors (recursive `$ref`, free-form objects) | Look at the `NOT fixable` lines in the `check` table and change the schema or pick another profile |
 | `npm test` gives a version error | vitest requires Node 22.12 or later | Update Node (20 or later if you only use the runtime) |
 | The direct run in `npm run demo` is always FAIL | Intended result | It is the scene showing the direct failure |
