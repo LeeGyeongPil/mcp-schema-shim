@@ -7,6 +7,7 @@ import { main } from "../src/cli.js";
 
 const tools = fileURLToPath(new URL("../examples/tools.json", import.meta.url));
 const v1 = fileURLToPath(new URL("../examples/server-v1.mjs", import.meta.url));
+const fixture = fileURLToPath(new URL("./fixtures/check-server.mjs", import.meta.url));
 const tmp = mkdtempSync(join(tmpdir(), "mcp-schema-shim-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -101,5 +102,71 @@ describe("cli", () => {
     expect(r.out).toContain("exposed to the model as issues_search");
     expect(r.out).toMatch(/direct: {3}FAIL/);
     expect(r.out).toMatch(/via shim: OK/);
+  });
+
+  describe("check with a server command", () => {
+    const server = (mode: string): string[] => ["--", process.execPath, fixture, mode];
+
+    it("reads every tools/list page and exits 1 on errors", async () => {
+      const r = await cli("check", "--profile", "openai-strict", ...server("ok"));
+      expect(r.code).toBe(1);
+      expect(r.out).toContain("find_items");
+      expect(r.out).toContain("list_labels");
+      expect(r.out).not.toContain("check-server["); // server stderr goes to the real stderr, never into the report
+    });
+
+    it("gives the same json as file mode for the same tools", async () => {
+      const server1 = await cli("check", "--profile", "openai-strict", "--format", "json", ...server("ok"));
+      const toolsFile = join(tmp, "paged.json");
+      const all = [
+        { name: "find_items", description: "Find items", inputSchema: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer" } }, required: ["query"] } },
+        { name: "list_labels", description: "List labels", inputSchema: { type: "object", properties: { page: { type: "integer" } }, required: [] } },
+      ];
+      writeFileSync(toolsFile, JSON.stringify({ tools: all }));
+      const file = await cli("check", toolsFile, "--profile", "openai-strict", "--format", "json");
+      expect(JSON.parse(server1.out)).toEqual(JSON.parse(file.out));
+    });
+
+    it("exits 0 when the profile finds no errors", async () => {
+      const r = await cli("check", "--profile", "gemini-json-schema", ...server("ok"));
+      expect(r.code).toBe(0);
+    });
+
+    it("times out on a silent server that ignores SIGTERM and leaves no process", async () => {
+      const started = Date.now();
+      const r = await cli("check", "--profile", "openai-strict", "--timeout", "300", ...server("silent"));
+      expect(r.code).toBe(2);
+      expect(r.err).toContain("did not answer");
+      expect(Date.now() - started).toBeLessThan(3500);
+    }, 10_000);
+
+    it("reports a missing command as exit 2 without an unexpected-error stack", async () => {
+      const r = await cli("check", "--profile", "openai-strict", "--", "no-such-cmd-xyz");
+      expect(r.code).toBe(2);
+      expect(r.err).toContain("Could not start");
+      expect(r.err).not.toContain("unexpected error");
+    });
+
+    it("reports an early exit and an MCP error response", async () => {
+      const exited = await cli("check", "--profile", "openai-strict", ...server("exit"));
+      expect(exited.code).toBe(2);
+      expect(exited.err).toContain("exited (code 3)");
+      const rpc = await cli("check", "--profile", "openai-strict", ...server("rpc-error"));
+      expect(rpc.code).toBe(2);
+      expect(rpc.err).toContain("MCP error -32603: listing failed");
+    });
+
+    it("rejects a tools file together with a server command, and --timeout in file mode", async () => {
+      const both = await cli("check", tools, "--profile", "openai-strict", ...server("ok"));
+      expect(both.code).toBe(2);
+      expect(both.err).toContain("not both");
+      const timeout = await cli("check", tools, "--profile", "openai-strict", "--timeout", "500");
+      expect(timeout.code).toBe(2);
+      expect(timeout.err).toContain("--timeout only applies");
+      const bad = await cli("check", "--profile", "openai-strict", "--timeout", "0", ...server("ok"));
+      expect(bad.code).toBe(2);
+      expect(bad.err).toContain("positive number");
+      expect((await cli("check", "--profile", "openai-strict")).err).toContain("a tools file or a server command");
+    });
   });
 });

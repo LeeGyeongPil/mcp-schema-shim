@@ -1,23 +1,49 @@
 {
   "name": "mcp-schema-shim",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Check and transform MCP tool input schemas for Gemini, OpenAI strict and Anthropic strict function calling, and restore the arguments the model sends back to the original schema shape.",
   "license": "MIT",
   "author": "LeeGyeongPil",
   "type": "module",
-  "keywords": ["mcp", "model-context-protocol", "json-schema", "function-calling", "gemini", "openai", "anthropic", "proxy"],
-  "repository": { "type": "git", "url": "git+https://github.com/LeeGyeongPil/mcp-schema-shim.git" },
-  "bugs": { "url": "https://github.com/LeeGyeongPil/mcp-schema-shim/issues" },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "json-schema",
+    "function-calling",
+    "gemini",
+    "openai",
+    "anthropic",
+    "proxy"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LeeGyeongPil/mcp-schema-shim.git"
+  },
+  "bugs": {
+    "url": "https://github.com/LeeGyeongPil/mcp-schema-shim/issues"
+  },
   "homepage": "https://github.com/LeeGyeongPil/mcp-schema-shim#readme",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
     "./package.json": "./package.json"
   },
-  "bin": { "mcp-schema-shim": "dist/cli.js" },
-  "files": ["dist", "README.md", "LICENSE", "CHANGELOG.md"],
-  "engines": { "node": ">=20" },
+  "bin": {
+    "mcp-schema-shim": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",

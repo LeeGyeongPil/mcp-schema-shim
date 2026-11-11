@@ -8,6 +8,7 @@ import { PROFILE_IDS, isProfileId } from "./profiles/index.js";
 import { transformTools } from "./transform.js";
 import { formatDiagnostics, type ReportFormat } from "./report.js";
 import { startProxy } from "./proxy/proxy.js";
+import { connectServer, listAllTools } from "./rpc-client.js";
 import { simulate } from "./simulate.js";
 import { isObj } from "./walk.js";
 
@@ -20,6 +21,7 @@ const HELP = `mcp-schema-shim - make MCP tool schemas fit Gemini / OpenAI strict
 
 Usage:
   mcp-schema-shim check <tools.json> (--profile <id> ... | --all) [--format text|json|markdown]
+  mcp-schema-shim check (--profile <id> ... | --all) [--format text|json|markdown] [--timeout <ms>] -- <server command> [args...]
   mcp-schema-shim fix <tools.json> --profile <id> [--map <file>] [-o <file>]
   mcp-schema-shim proxy --profile <id> [--log <file>] -- <server command> [args...]
   mcp-schema-shim simulate --profile <id> [--tool <name>] [--args <json>] -- <server command> [args...]
@@ -27,6 +29,7 @@ Usage:
 Profiles: ${PROFILE_IDS.join(", ")}
 
 Exit codes: 0 ok, 1 findings of error severity (check) / unfixable errors (fix), 2 bad input or usage.
+  check with a server command: 2 if the server cannot be started, times out or answers with an error.
 `;
 
 function readTools(file: string): McpTool[] {
@@ -78,6 +81,26 @@ export async function main(argv: string[], io: CliIo = { stdout: process.stdout,
   }
 }
 
+/** Start the server, read every tools/list page, and always stop the child process. */
+async function fetchTools(
+  command: string,
+  args: string[],
+  timeoutMs: number,
+  profile: string[] | undefined,
+  all: boolean | undefined,
+  format: string | undefined,
+): Promise<McpTool[]> {
+  // Validate cheap options first so a typo does not start a server.
+  profilesFrom(profile, all);
+  formatFrom(format);
+  const conn = connectServer(command, args, timeoutMs);
+  try {
+    return await listAllTools(conn, command, timeoutMs);
+  } finally {
+    await conn.close();
+  }
+}
+
 async function run(argv: string[], io: CliIo): Promise<number> {
   const sep = argv.indexOf("--");
   const own = sep >= 0 ? argv.slice(0, sep) : argv;
@@ -89,6 +112,7 @@ async function run(argv: string[], io: CliIo): Promise<number> {
       profile: { type: "string", multiple: true },
       all: { type: "boolean" },
       format: { type: "string" },
+      timeout: { type: "string" },
       map: { type: "string" },
       output: { type: "string", short: "o" },
       log: { type: "string" },
@@ -104,8 +128,21 @@ async function run(argv: string[], io: CliIo): Promise<number> {
   }
 
   if (command === "check") {
-    if (operands.length !== 1) throw new InputError("check needs exactly one tools file: mcp-schema-shim check <tools.json> --profile <id>");
-    const tools = readTools(operands[0]);
+    const serverMode = rest.length > 0;
+    if (serverMode && operands.length > 0) throw new InputError("check takes either a tools file or a server command after `--`, not both.");
+    if (!serverMode && operands.length === 0) {
+      throw new InputError(
+        "check needs a tools file or a server command: mcp-schema-shim check <tools.json> --profile <id>  |  mcp-schema-shim check --profile <id> -- node server.js",
+      );
+    }
+    if (!serverMode && operands.length !== 1) throw new InputError("check needs exactly one tools file: mcp-schema-shim check <tools.json> --profile <id>");
+    if (!serverMode && values.timeout !== undefined) throw new InputError("--timeout only applies with a server command after `--`.");
+    let timeoutMs = 10_000;
+    if (values.timeout !== undefined) {
+      timeoutMs = Number(values.timeout);
+      if (!/^\d+$/.test(values.timeout) || !Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new InputError("--timeout must be a positive number of milliseconds.");
+    }
+    const tools = serverMode ? await fetchTools(rest[0], rest.slice(1), timeoutMs, values.profile, values.all, values.format) : readTools(operands[0]);
     const profiles = profilesFrom(values.profile, values.all);
     const diags: Diagnostic[] = profiles.flatMap((p) => transformTools(tools, p).diagnostics);
     io.stdout.write(formatDiagnostics(diags, formatFrom(values.format)));
