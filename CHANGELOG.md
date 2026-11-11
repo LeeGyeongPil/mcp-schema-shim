@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-12
+
+### Added
+- `anthropic-strict/limit-tools`: error (not fixable) when one `tools/list` has more than 20 tools. Docs: "Maximum number of tools with `strict: true`".
+- `anthropic-strict/limit-optional`: error (not fixable) when more than 24 optional parameters (object properties not listed in `required`, counted at every nesting level) exist across all tool schemas. Docs: "Each parameter not listed in `required` counts toward this limit".
+- Optional `Profile.checkToolList` hook, run once by `transformTools()`; only `anthropic-strict` uses it. Findings are reported under the tool name `(all tools)`.
+
+### Changed
+- `check` and `fix` now exit 1 for large tool lists under `anthropic-strict` (more than 20 tools or 24 optional parameters), because the API would reject the request with 400. Exactly 20 and 24 stay clean.
+
+### Known limitations
+- The limits come from the documentation (read 2026-11-12), not from tests against the live API.
+- The proxy counts per `tools/list` page, not across pages, and only logs the rule in its `NOT fixable:` line; it still forwards `tools/list` unchanged.
+
 ## [0.2.0] - 2026-11-12
 
 ### Added
