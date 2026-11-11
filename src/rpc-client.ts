@@ -57,7 +57,7 @@ export class RpcClient {
     await this.request("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "mcp-schema-shim", version: "0.2.0" },
+      clientInfo: { name: "mcp-schema-shim", version: "0.3.0" },
     });
     this.notify("notifications/initialized");
   }
@@ -169,7 +169,7 @@ export async function listAllTools(conn: ServerConnection, command: string, time
     await call("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "mcp-schema-shim", version: "0.2.0" },
+      clientInfo: { name: "mcp-schema-shim", version: "0.3.0" },
     });
     conn.client.notify("notifications/initialized");
     const tools: McpTool[] = [];

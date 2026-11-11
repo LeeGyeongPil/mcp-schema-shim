@@ -1,4 +1,4 @@
-import type { JsonSchema } from "../types.js";
+import type { JsonSchema, McpTool } from "../types.js";
 import { defineRules } from "../rules/registry.js";
 import { DOC_URLS } from "../rules/docs.js";
 import { inlineRefs } from "../refs.js";
@@ -18,7 +18,15 @@ export const rules = defineRules("anthropic-strict", [
   { name: "tool-name", severity: "error", fixable: true, summary: "Tool names must match ^[a-zA-Z0-9_-]{1,128}$; the name is rewritten and the proxy maps it back.", docUrl: DOC_URLS.anthropicToolUse },
   { name: "root-type", severity: "warning", fixable: true, summary: 'The root schema needs type "object".', docUrl: DOC_URLS.anthropicToolUse },
   { name: "root-object", severity: "error", fixable: false, summary: "The root schema must be an object schema.", docUrl: DOC_URLS.anthropicToolUse },
+  { name: "limit-tools", severity: "error", fixable: false, summary: "At most 20 strict tools are allowed in one request (docs: \"Maximum number of tools with `strict: true`\"). Counted over the whole tool list.", docUrl: DOC },
+  { name: "limit-optional", severity: "error", fixable: false, summary: "At most 24 optional parameters are allowed across all strict tool schemas in one request (docs: \"Each parameter not listed in `required` counts toward this limit\"). Counted at every nesting level over the whole tool list.", docUrl: DOC },
 ]);
+
+// Request-level limits from the Anthropic structured-outputs documentation (limits table), read 2026-11-12:
+// https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+// Not verified against the live API.
+const MAX_STRICT_TOOLS = 20;
+const MAX_OPTIONAL_PARAMS = 24;
 
 const CONSTRAINTS = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength"];
 
@@ -97,13 +105,41 @@ export function mapToolName(name: string): string {
   return cleaned.length > 0 ? cleaned : "tool";
 }
 
+/** Count keys of `properties` that are not listed in `required`, at every nesting level. `$defs`/`definitions` are skipped. */
+function countOptional(node: unknown): number {
+  if (Array.isArray(node)) return node.reduce((sum: number, n) => sum + countOptional(n), 0);
+  if (!isObj(node)) return 0;
+  let total = 0;
+  for (const [k, v] of Object.entries(node)) {
+    if (k === "$defs" || k === "definitions") continue;
+    if (k === "properties" && isObj(v)) {
+      const required: unknown[] = Array.isArray(node.required) ? node.required : [];
+      for (const [name, child] of Object.entries(v)) {
+        if (!required.includes(name)) total++;
+        total += countOptional(child);
+      }
+    } else if (k !== "required" && k !== "enum" && k !== "const" && k !== "default" && k !== "examples") {
+      total += countOptional(v);
+    }
+  }
+  return total;
+}
+
+/** List-wide checks: the API limits apply to the whole request, not to one tool. */
+export function checkToolList(tools: McpTool[], emit: (name: string, message: string) => void): void {
+  if (tools.length > MAX_STRICT_TOOLS) emit("limit-tools", tools.length + " strict tools in one request (limit " + MAX_STRICT_TOOLS + ")");
+  const optional = tools.reduce((sum, t) => sum + countOptional(t.inputSchema), 0);
+  if (optional > MAX_OPTIONAL_PARAMS) emit("limit-optional", optional + " optional parameters across all strict tool schemas (limit " + MAX_OPTIONAL_PARAMS + ")");
+}
+
 export const anthropicStrict: Profile = {
   id: "anthropic-strict",
   title: "Anthropic strict tool use",
-  description: "`strict: true` tools reject numeric/length constraints and complex patterns, and tool names must match ^[a-zA-Z0-9_-]{1,128}$.",
+  description: "`strict: true` tools reject numeric/length constraints and complex patterns, and tool names must match ^[a-zA-Z0-9_-]{1,128}$. Request limits: at most 20 strict tools and 24 optional parameters in total.",
   docUrl: DOC_URLS.anthropicStructured,
   rules,
   transformSchema,
   mapToolName,
   nameRule: "tool-name",
+  checkToolList,
 };

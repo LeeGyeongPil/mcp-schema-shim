@@ -1,4 +1,4 @@
-import type { Diagnostic, JsonSchema, MapEntry, ProfileId } from "../types.js";
+import type { Diagnostic, JsonSchema, MapEntry, McpTool, ProfileId } from "../types.js";
 import type { RuleDef } from "../rules/registry.js";
 import type { RefHooks } from "../refs.js";
 import { isObj } from "../walk.js";
@@ -30,6 +30,11 @@ export interface Profile extends ProfileInfo {
   mapToolName?(name: string): string;
   /** Rule name used when `mapToolName` changes a name. */
   nameRule?: string;
+  /**
+   * Optional list-wide check, run once by `transformTools()` on the transformed tools.
+   * Use it for request-level limits that no single tool can show. `emit(name, message)` reports rule `<profile>/<name>`.
+   */
+  checkToolList?(tools: McpTool[], emit: (name: string, message: string) => void): void;
 }
 
 export function createCtx(profile: ProfileId, rules: RuleDef[], tool: string): Ctx {

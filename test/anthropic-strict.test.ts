@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { check, restore, RestoreError, transformTools, type McpTool } from "../src/index.js";
+import { check, restore, RestoreError, transformTool, transformTools, type McpTool } from "../src/index.js";
 
 const RULE = "anthropic-strict/";
 
@@ -119,6 +119,76 @@ describe("anthropic-strict: array constraints, format, word boundary", () => {
   it("AC5: the fixed reproduction schemas re-check clean", () => {
     for (const t of [arr, pat]) {
       expect(check(transformTools([t], "anthropic-strict").tools[0], "anthropic-strict")).toEqual([]);
+    }
+  });
+});
+
+// ---- request-level limits (0.3.0): at most 20 strict tools and 24 optional parameters per request ----
+describe("anthropic-strict: request-level limits", () => {
+  /** `count` tools, each with `optional` optional string fields and one required field. */
+  function makeList(count: number, optional: number): McpTool[] {
+    return Array.from({ length: count }, (_, i) => {
+      const properties: Record<string, unknown> = { id: { type: "string" } };
+      for (let n = 0; n < optional; n++) properties["opt" + n] = { type: "string" };
+      return { name: "tool_" + i, inputSchema: { type: "object", properties, required: ["id"], additionalProperties: false } } as McpTool;
+    });
+  }
+  const limitIds = (list: McpTool[], profile: Parameters<typeof check>[1] = "anthropic-strict"): string[] =>
+    check(list, profile).filter((d) => d.ruleId.includes("/limit-")).map((d) => d.ruleId);
+
+  // (a)
+  it("reports exactly one limit-tools error for 21 valid tools", () => {
+    const diags = check(makeList(21, 0), "anthropic-strict").filter((d) => d.ruleId === RULE + "limit-tools");
+    expect(diags).toHaveLength(1);
+    expect(diags[0].fixable).toBe(false);
+    expect(diags[0].severity).toBe("error");
+    expect(diags[0].tool).toBe("(all tools)");
+    expect(diags[0].message).toBe("21 strict tools in one request (limit 20)");
+  });
+
+  // (b)
+  it("reports limit-optional for 5 tools x 5 optional parameters", () => {
+    const diags = check(makeList(5, 5), "anthropic-strict").filter((d) => d.ruleId === RULE + "limit-optional");
+    expect(diags).toHaveLength(1);
+    expect(diags[0].fixable).toBe(false);
+    expect(diags[0].message).toBe("25 optional parameters across all strict tool schemas (limit 24)");
+  });
+
+  it("counts optional parameters at nested levels (items, anyOf)", () => {
+    const nested = {
+      name: "nested",
+      inputSchema: {
+        type: "object",
+        required: ["a"],
+        additionalProperties: false,
+        properties: {
+          a: { type: "array", items: { type: "object", additionalProperties: false, properties: Object.fromEntries(Array.from({ length: 13 }, (_, i) => ["f" + i, { type: "string" }])) } },
+          b: { anyOf: [{ type: "object", additionalProperties: false, properties: Object.fromEntries(Array.from({ length: 12 }, (_, i) => ["g" + i, { type: "string" }])) }, { type: "null" }] },
+        },
+      },
+    } as McpTool;
+    // 13 (items) + 12 (anyOf branch) + 1 (b itself is optional) = 26
+    const diags = check([nested], "anthropic-strict").filter((d) => d.ruleId === RULE + "limit-optional");
+    expect(diags.map((d) => d.message)).toEqual(["26 optional parameters across all strict tool schemas (limit 24)"]);
+  });
+
+  // (c)
+  it("stays clean at exactly 20 tools and exactly 24 optional parameters", () => {
+    expect(limitIds(makeList(20, 0))).toEqual([]);
+    expect(limitIds(makeList(4, 6))).toEqual([]); // 24 optional in total
+    expect(limitIds(makeList(1, 24))).toEqual([]);
+  });
+
+  it("transformTool() on a single tool never reports list-wide limits", () => {
+    expect(limitIds([makeList(1, 30)[0]])).toEqual(["anthropic-strict/limit-optional"]);
+    expect(transformTool(makeList(1, 30)[0], "anthropic-strict").diagnostics.some((d) => d.ruleId.includes("/limit-"))).toBe(false);
+  });
+
+  // (d)
+  it("adds no limit rules to openai-strict and gemini profiles", () => {
+    const list = makeList(21, 0);
+    for (const profile of ["openai-strict", "gemini-parameters", "gemini-json-schema"] as const) {
+      expect(limitIds(list, profile).filter((id) => id.endsWith("limit-tools") || id.endsWith("limit-optional"))).toEqual([]);
     }
   });
 });

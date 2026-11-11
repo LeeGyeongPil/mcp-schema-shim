@@ -62,5 +62,14 @@ export function transformTools(tools: McpTool[], profile: ProfileId, opts: Trans
     map.tools[r.tool.name] = r.toolMap;
     diagnostics.push(...r.diagnostics);
   });
+  if (p.checkToolList) {
+    // List-wide (request-level) findings are reported on the transformed tools, under the pseudo tool "(all tools)".
+    const byId = new Map(p.rules.map((r) => [r.id, r]));
+    p.checkToolList(out, (ruleName, message) => {
+      const rule = byId.get(profile + "/" + ruleName);
+      if (!rule) throw new Error("internal: unknown rule " + profile + "/" + ruleName);
+      diagnostics.push({ tool: "(all tools)", pointer: "", ruleId: rule.id, profile, severity: rule.severity, fixable: rule.fixable, message, docUrl: rule.docUrl });
+    });
+  }
   return { tools: out, map, diagnostics };
 }

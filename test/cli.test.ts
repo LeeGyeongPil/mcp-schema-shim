@@ -170,3 +170,21 @@ describe("cli", () => {
     });
   });
 });
+
+describe("cli: anthropic-strict request limits", () => {
+  // (e)
+  it("check exits 1 for a 21-tool file", async () => {
+    const list = Array.from({ length: 21 }, (_, i) => ({
+      name: "tool_" + i,
+      inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false },
+    }));
+    const file = join(tmp, "many-tools.json");
+    writeFileSync(file, JSON.stringify({ tools: list }));
+    const r = await cli("check", file, "--profile", "anthropic-strict");
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("anthropic-strict/limit-tools");
+    expect(r.out).toContain("NOT fixable");
+    const other = await cli("check", file, "--profile", "openai-strict");
+    expect(other.out).not.toContain("limit-tools");
+  });
+});
