@@ -28,8 +28,13 @@ export class UnknownToolError extends Error {
 
 /** Thrown for bad user input (malformed tool files, unknown profiles, bad CLI usage). */
 export class InputError extends Error {
-  constructor(message: string) {
+  /** Stable message key; the CLI uses it (with `params`) to show the message in the chosen screen language. `message` stays English. */
+  readonly code?: string;
+  readonly params?: Record<string, string | number>;
+  constructor(message: string, code?: string, params?: Record<string, string | number>) {
     super(message);
     this.name = "InputError";
+    this.code = code;
+    this.params = params;
   }
 }

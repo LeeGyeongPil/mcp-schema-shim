@@ -1,12 +1,14 @@
 import { PassThrough } from "node:stream";
 import type { JsonSchema, McpTool, ProfileId } from "./types.js";
-import { InputError } from "./errors.js";
+import { inputError, t, type Lang } from "./i18n.js";
 import { compileSchema } from "./restore.js";
 import { connectServer, RpcClient } from "./rpc-client.js";
 import { makeRng, sampleArgs } from "./sample.js";
 import { startProxy } from "./proxy/proxy.js";
 import { isObj } from "./walk.js";
+import { width } from "./report.js";
 
+/** Bilingual banner kept for library users; the CLI prints the banner of the chosen screen language instead. */
 export const MOCK_BANNER = "mock model — no LLM is called (연습용 목 모델, 실제 모델 호출 없음)";
 
 function fits(schema: JsonSchema, value: unknown): boolean {
@@ -67,6 +69,8 @@ export interface SimulateOptions {
   /** Original (valid) arguments; default: the smallest valid object (required properties only). */
   callArgs?: Record<string, unknown>;
   write: (line: string) => void;
+  /** Internal: screen language of the labels (default English). `simulate` is not part of the public API. */
+  lang?: Lang;
 }
 
 async function call(client: RpcClient, name: string, args: unknown): Promise<{ ok: boolean; text: string }> {
@@ -81,8 +85,9 @@ async function call(client: RpcClient, name: string, args: unknown): Promise<{ o
 /** Compare "mock model -> server directly" with "mock model -> shim proxy -> server". */
 export async function simulate(opts: SimulateOptions): Promise<void> {
   const w = opts.write;
-  w(MOCK_BANNER);
-  w("The server and its argument validation are real; only the model is imitated.");
+  const lang = opts.lang ?? "en";
+  w(t(lang, "sim.banner"));
+  w(t(lang, "sim.note"));
 
   const direct = connectServer(opts.command, opts.args);
   const viaProxyIn = new PassThrough();
@@ -94,22 +99,25 @@ export async function simulate(opts: SimulateOptions): Promise<void> {
     await shimClient.initialize();
     const original = (await direct.client.request("tools/list")).tools as McpTool[];
     const exposed = (await shimClient.request("tools/list")).tools as McpTool[];
-    if (!Array.isArray(original) || original.length === 0) throw new InputError("The server returned no tools.");
+    if (!Array.isArray(original) || original.length === 0) throw inputError("err.noTools");
     const index = opts.tool ? original.findIndex((t) => t.name === opts.tool) : 0;
-    if (index < 0) throw new InputError('Tool "' + opts.tool + '" not found. Available: ' + original.map((t) => t.name).join(", "));
+    if (index < 0) throw inputError("err.toolNotFound", { tool: opts.tool ?? "", available: original.map((x) => x.name).join(", ") });
 
     const args = opts.callArgs ?? sampleArgs(original[index].inputSchema, makeRng(1), "minimal");
     const mock = mockModelCall(exposed[index], args);
     w("");
-    w("profile:            " + opts.profile);
-    w("tool:               " + original[index].name + (exposed[index].name !== original[index].name ? "  (exposed to the model as " + exposed[index].name + ")" : ""));
-    w("intended arguments: " + JSON.stringify(args));
-    w("mock model sends:   " + JSON.stringify(mock.arguments));
+    w(t(lang, "sim.profile") + opts.profile);
+    w(t(lang, "sim.tool") + original[index].name + (exposed[index].name !== original[index].name ? t(lang, "sim.exposedAs", { name: exposed[index].name }) : ""));
+    w(t(lang, "sim.intended") + JSON.stringify(args));
+    w(t(lang, "sim.mockSends") + JSON.stringify(mock.arguments));
     w("");
     const d = await call(direct.client, mock.name, mock.arguments);
-    w("direct:   " + (d.ok ? "OK   " : "FAIL ") + indentLines(d.text));
+    // Follow-up lines start under the first character of the message, measured in screen columns (Hangul = 2).
+    const dHead = t(lang, "sim.direct") + t(lang, d.ok ? "sim.ok" : "sim.fail");
+    w(dHead + indentLines(d.text, " ".repeat(width(dHead))));
     const s = await call(shimClient, mock.name, mock.arguments);
-    w("via shim: " + (s.ok ? "OK   " : "FAIL ") + indentLines(s.text));
+    const sHead = t(lang, "sim.viaShim") + t(lang, s.ok ? "sim.ok" : "sim.fail");
+    w(sHead + indentLines(s.text, " ".repeat(width(sHead))));
   } finally {
     viaProxyIn.end();
     shimClient.close();
@@ -120,6 +128,6 @@ export async function simulate(opts: SimulateOptions): Promise<void> {
 }
 
 /** Keeps every line of a multi-line result (validation errors list one problem per line), indenting the follow-up lines. */
-function indentLines(text: string): string {
-  return text.split("\n").join("\n         ");
+function indentLines(text: string, pad: string): string {
+  return text.split("\n").join("\n" + pad);
 }

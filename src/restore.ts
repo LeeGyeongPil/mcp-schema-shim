@@ -2,7 +2,8 @@ import { Ajv, type ValidateFunction } from "ajv";
 import Ajv2020Default from "ajv/dist/2020.js";
 import addFormatsModule from "ajv-formats";
 import type { JsonSchema, ShimMap, ToolMap } from "./types.js";
-import { InputError, RestoreError, UnknownToolError } from "./errors.js";
+import { RestoreError, UnknownToolError } from "./errors.js";
+import { inputError } from "./i18n.js";
 import { isObj, unescArg } from "./walk.js";
 
 // ajv-formats and ajv/dist/2020 are CommonJS; unwrap the default export under NodeNext.
@@ -23,7 +24,7 @@ export function compileSchema(schema: JsonSchema): ValidateFunction {
   try {
     validate = ajv.compile(body);
   } catch (e) {
-    throw new InputError("The original input schema cannot be compiled for validation: " + (e instanceof Error ? e.message : String(e)));
+    throw inputError("err.cannotCompile", { reason: e instanceof Error ? e.message : String(e) });
   }
   validators.set(schema, validate);
   return validate;

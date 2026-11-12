@@ -1,15 +1,15 @@
 import type { McpTool, ProfileId, ShimMap, TransformOptions, TransformResult, TransformToolResult } from "./types.js";
-import { InputError } from "./errors.js";
+import { inputError } from "./i18n.js";
 import { getProfile } from "./profiles/index.js";
 import { createCtx } from "./profiles/common.js";
 import { isObj } from "./walk.js";
 
 function assertTool(tool: unknown, index: number | string): asserts tool is McpTool {
   if (!isObj(tool) || typeof tool.name !== "string" || tool.name.length === 0) {
-    throw new InputError("tools[" + index + '] needs a string "name". Pass MCP tool objects like {"name": "...", "inputSchema": {...}}.');
+    throw inputError("err.toolName", { index });
   }
   if (!isObj(tool.inputSchema)) {
-    throw new InputError('tools[' + index + '] ("' + tool.name + '") needs an "inputSchema" object. Tools without arguments should use {"type":"object","properties":{}}.');
+    throw inputError("err.toolSchema", { index, name: tool.name });
   }
 }
 
@@ -43,7 +43,7 @@ export function transformTool(tool: McpTool, profile: ProfileId, opts: Transform
 
 /** Transform a list of tools (e.g. a `tools/list` result) and build the map `restore()` needs. */
 export function transformTools(tools: McpTool[], profile: ProfileId, opts: TransformOptions = {}): TransformResult {
-  if (!Array.isArray(tools)) throw new InputError("transformTools() expects an array of MCP tools.");
+  if (!Array.isArray(tools)) throw inputError("err.toolsArray");
   const p = getProfile(profile);
   const used = new Set(opts.usedNames ?? []);
   // Names that stay as they are are reserved first, so a renamed tool can never take one of them.

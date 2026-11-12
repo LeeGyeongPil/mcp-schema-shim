@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 import { InputError } from "./errors.js";
+import { inputError } from "./i18n.js";
 import type { McpTool } from "./types.js";
 import { parseMessage, readLines, writeLine } from "./proxy/jsonrpc.js";
 
@@ -57,7 +58,7 @@ export class RpcClient {
     await this.request("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "mcp-schema-shim", version: "0.3.0" },
+      clientInfo: { name: "mcp-schema-shim", version: "0.4.0" },
     });
     this.notify("notifications/initialized");
   }
@@ -144,19 +145,20 @@ const MAX_PAGES = 100;
 export async function listAllTools(conn: ServerConnection, command: string, timeoutMs: number): Promise<McpTool[]> {
   const fail = async (e: unknown): Promise<never> => {
     const spawnErr = conn.spawnError();
-    if (spawnErr) throw new InputError("Could not start the server command `" + command + "`: " + spawnErr.message);
+    if (spawnErr) throw inputError("err.spawn", { command, reason: spawnErr.message });
     const err = e instanceof Error ? e : new Error(String(e));
     const method = (err as { timedOutMethod?: string }).timedOutMethod;
-    if (method) throw new InputError("The server did not answer " + method + " within " + timeoutMs + " ms. Raise --timeout if the server is slow to start.");
+    if (method) throw inputError("err.rpcTimeout", { method, ms: timeoutMs });
     const code = (err as { code?: unknown }).code;
     if (err.message.startsWith("MCP error ")) {
-      throw new InputError("The server answered " + (lastMethod ?? "a request") + " with MCP error " + String(code) + ": " + err.message.replace(/^MCP error -?\d+: /, ""));
+      const message = err.message.replace(/^MCP error -?\d+: /, "");
+      throw lastMethod === undefined ? inputError("err.rpcErrorNoMethod", { code: String(code), message }) : inputError("err.rpcError", { method: lastMethod, code: String(code), message });
     }
     if (err.message.includes("closed the connection")) {
       const exit = await conn.waitForExit(1000);
       const spawnLate = conn.spawnError();
-      if (spawnLate) throw new InputError("Could not start the server command `" + command + "`: " + spawnLate.message);
-      throw new InputError("The server exited" + (exit === null ? "" : " (code " + exit + ")") + " before tools/list finished.");
+      if (spawnLate) throw inputError("err.spawn", { command, reason: spawnLate.message });
+      throw exit === null ? inputError("err.serverExit") : inputError("err.serverExitCode", { code: exit });
     }
     throw err;
   };
@@ -169,7 +171,7 @@ export async function listAllTools(conn: ServerConnection, command: string, time
     await call("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "mcp-schema-shim", version: "0.3.0" },
+      clientInfo: { name: "mcp-schema-shim", version: "0.4.0" },
     });
     conn.client.notify("notifications/initialized");
     const tools: McpTool[] = [];
@@ -177,15 +179,15 @@ export async function listAllTools(conn: ServerConnection, command: string, time
     let cursor: string | undefined;
     for (let page = 0; page < MAX_PAGES; page++) {
       const result = await call("tools/list", cursor === undefined ? {} : { cursor });
-      if (!Array.isArray(result.tools)) throw new InputError("The server answered tools/list without a tools array.");
+      if (!Array.isArray(result.tools)) throw inputError("err.noToolsArray");
       tools.push(...(result.tools as McpTool[]));
       const next = result.nextCursor;
       if (typeof next !== "string" || next === "") return tools;
-      if (seen.has(next)) throw new InputError("The server repeated a tools/list cursor; stopping to avoid an endless loop.");
+      if (seen.has(next)) throw inputError("err.cursorRepeat");
       seen.add(next);
       cursor = next;
     }
-    throw new InputError("The server returned more than " + MAX_PAGES + " tools/list pages; stopping.");
+    throw inputError("err.tooManyPages", { max: MAX_PAGES });
   } catch (e) {
     if (e instanceof InputError) throw e;
     return fail(e);

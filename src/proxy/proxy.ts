@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 import type { McpTool, ProfileId, ShimMap } from "../types.js";
-import { InputError, RestoreError, UnknownToolError } from "../errors.js";
+import { RestoreError, UnknownToolError } from "../errors.js";
+import { inputError } from "../i18n.js";
 import { getProfile } from "../profiles/index.js";
 import { restore } from "../restore.js";
 import { transformTools } from "../transform.js";
@@ -33,7 +34,7 @@ export interface ProxyHandle {
  */
 export function startProxy(opts: ProxyOptions): ProxyHandle {
   getProfile(opts.profile);
-  if (!opts.command) throw new InputError("proxy needs the original server command after `--`, e.g. `-- node server.js`.");
+  if (!opts.command) throw inputError("err.proxyLibNeedsCommand");
   const input = opts.input ?? process.stdin;
   const output = opts.output ?? process.stdout;
   const log = opts.log ?? (() => undefined);

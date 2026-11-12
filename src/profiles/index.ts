@@ -1,5 +1,5 @@
 import type { ProfileId } from "../types.js";
-import { InputError } from "../errors.js";
+import { inputError } from "../i18n.js";
 import type { Profile, ProfileInfo } from "./common.js";
 import { geminiParameters } from "./gemini-parameters.js";
 import { geminiJsonSchema } from "./gemini-json-schema.js";
@@ -26,6 +26,6 @@ export function isProfileId(x: unknown): x is ProfileId {
 
 /** Internal: the executable profile. Throws a helpful InputError for unknown ids. */
 export function getProfile(id: string): Profile {
-  if (!isProfileId(id)) throw new InputError('Unknown profile "' + id + '". Choose one of: ' + PROFILE_IDS.join(", ") + ".");
+  if (!isProfileId(id)) throw inputError("err.unknownProfile", { name: id, profiles: PROFILE_IDS.join(", ") });
   return IMPL[id];
 }
