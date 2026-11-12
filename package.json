@@ -1,6 +1,6 @@
 {
   "name": "mcp-schema-shim",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Check and transform MCP tool input schemas for Gemini, OpenAI strict and Anthropic strict function calling, and restore the arguments the model sends back to the original schema shape.",
   "license": "MIT",
   "author": "LeeGyeongPil",

@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-11-12
+
+### Added
+- English and Korean screen language for the CLI: help, the text and markdown reports, error messages and the `simulate` output. Choose it with `--lang en|ko`, or the `MCP_SCHEMA_SHIM_LANG`, `LC_ALL`, `LC_MESSAGES` or `LANG` environment variable, in that order (a value starting with `ko` means Korean, everything else English). `--lang` with any other value exits 2 with one error line.
+- Korean text and markdown reports describe each finding with a Korean one-line summary per rule ID; a rule without an entry falls back to the English message.
+- `InputError` has optional `code` and `params` fields so the CLI can show library errors in the chosen language. `message` stays the same English text.
+- `src/i18n.ts` holds every message in one table; tests check that the English and Korean keys match and that every rule has a Korean summary.
+
+### Changed
+- `simulate` prints its banner and labels in one language (English or Korean) instead of an English banner with a Korean note. The exported `MOCK_BANNER` constant is unchanged.
+- Node `parseArgs` errors (unknown option, missing value) are shown in the chosen language, followed by a hint to run `--help`.
+
+### Unchanged
+- `--format json` output (including `Diagnostic.message`), rule IDs, exit codes, the library exports and the English `message` of every exception are byte-for-byte the same in both languages. Scripts that compare the human-readable English text should pin `--lang en` or `MCP_SCHEMA_SHIM_LANG=en` when the machine locale is Korean. The proxy operational log lines and `docs/rules.md` are not translated.
+
 ## [0.3.0] - 2026-11-12
 
 ### Added
