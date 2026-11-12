@@ -110,8 +110,8 @@ node dist/cli.js simulate --profile anthropic-strict --tool issues.search --args
 ```
 direct:   FAIL MCP error -32602: Tool issues_search not found
 via shim: FAIL mcp-schema-shim: Arguments for tool "issues.search" do not match its original input schema:
-         - /query: must NOT have fewer than 1 characters (minLength)
-         Fix the arguments and call the tool again.
+               - /query: must NOT have fewer than 1 characters (minLength)
+               Fix the arguments and call the tool again.
 ```
 (The above is only the last two paragraphs of the output. `direct` fails because it sent the converted name `issues_search` straight to the server.)
 
@@ -175,7 +175,25 @@ Public API (everything exported from `src/index.ts`):
 | Types | types | `ProfileId`, `JsonSchema`, `McpTool`, `Severity`, `Diagnostic`, `MapOp`, `MapEntry`, `ToolMap`, `ShimMap`, `TransformOptions`, `TransformResult`, `TransformToolResult`, `RestoreIssue`, `ProfileInfo`, `RuleDef` |
 
 ## Configuration
-There are no configuration files, environment variables or API keys. Behavior is set only by `--profile` and the options above. With a server command, `--timeout <ms>` (default `10000`) is how long `check` waits for each answer; it is an error in file mode. The full rule list (with an official documentation URL and check date for each rule) is in [docs/rules.md](docs/rules.md).
+There are no configuration files or API keys. The only environment variables choose the screen language (see below). Behavior is set by `--profile` and the options above. With a server command, `--timeout <ms>` (default `10000`) is how long `check` waits for each answer; it is an error in file mode. The full rule list (with an official documentation URL and check date for each rule) is in [docs/rules.md](docs/rules.md).
+
+### Screen language (English / Korean)
+The CLI shows its help, reports, errors and `simulate` output in English or Korean. The language is picked in this order, and the first one that is set wins:
+
+1. `--lang en|ko` (any other value exits 2 with one error line)
+2. the `MCP_SCHEMA_SHIM_LANG` environment variable
+3. `LC_ALL`, then `LC_MESSAGES`, then `LANG` (a value starting with `ko`, such as `ko_KR.UTF-8`, means Korean)
+4. otherwise English
+
+```bash
+node dist/cli.js check examples/tools.json --profile openai-strict --lang ko
+MCP_SCHEMA_SHIM_LANG=ko node dist/cli.js simulate --profile openai-strict -- node examples/server-v1.mjs
+LANG=ko_KR.UTF-8 node dist/cli.js check examples/tools.json --profile openai-strict
+```
+
+`--format json` output, rule IDs and exit codes are the same in both languages, so scripts are not affected. In `simulate`, only the banner and labels (`direct`, `via shim`, `FAIL`/`OK`) change language; the MCP tool-result text returned by the server and the proxy (the response a model reads, such as `MCP error ...` and `Arguments for tool ...`) stays English in both languages. In Korean, each finding in the text and markdown reports is described by a Korean one-line summary per rule; the diagnostic text in JSON and the proxy log lines stay English.
+
+An unrecognized `MCP_SCHEMA_SHIM_LANG` value (anything other than `en`/`ko`, for example `xx`) is ignored without a warning and the CLI shows English; only `--lang` rejects bad values.
 
 ## Profiles and rules
 A profile is "which provider, through which path, you will send to". Pick it with `--profile`.
@@ -230,6 +248,7 @@ src/
   transform.ts  converts tools + builds the conversion map, handles name collisions
   restore.ts  restores arguments using the map + validates with the original schema (ajv)
   proxy/      stdio JSON-RPC proxy (proxy.ts, jsonrpc.ts)
+  i18n.ts      every screen message in English and Korean, and the language choice (--lang, MCP_SCHEMA_SHIM_LANG, LANG)
   simulate.ts  compares direct and via-shim with a mock model (sample.ts generates arguments)
   rpc-client.ts  stdio JSON-RPC client: starts a server, reads every tools/list page for check, always stops the child (simulate, check)
   cli.ts      the check, fix, proxy and simulate commands

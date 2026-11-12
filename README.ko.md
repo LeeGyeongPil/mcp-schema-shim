@@ -4,7 +4,7 @@
 
 MCP 서버의 도구 정의(JSON Schema)를 모델 제공자(Gemini·OpenAI strict·Anthropic strict)가 받아 주는 모양으로 고쳐 주고, 모델이 고친 스키마대로 보낸 인자를 **원래 서버가 받는 모양으로 되돌려 주는** 도구입니다.
 
-![30초 체험 결과: 직결은 실패, shim 경유는 성공](docs/images/01-demo.png)
+![30초 체험 결과: 직결은 실패, shim 경유는 성공](docs/images/01-demo.ko.png)
 *연습용 목 모델이 만든 인자를 서버에 직접 보내면 `-32602` 로 거부되고, shim 을 거치면 통과한다.*
 
 ## 이런 분께
@@ -27,7 +27,7 @@ MCP 서버의 도구 정의(JSON Schema)를 모델 제공자(Gemini·OpenAI stri
 | `op` | 지도 항목의 종류(`nullable-optional`, `enum-stringified`, `name-mapped` 등). 아래 표 참고. |
 | `lossy` | 변환 때 정보가 사라졌다는 표시. 사라진 제약은 마지막 원래 스키마 검증이 대신 지킵니다. |
 | 인자 복원(restore) | 모델이 변환된 스키마대로 보낸 인자를 원래 스키마 모양으로 되돌리고 검증하는 단계. |
-| `fixable` | 이 도구가 자동으로 고칠 수 있는 진단. `NOT fixable` 은 스키마를 직접 바꿔야 합니다. |
+| 수정 가능 (`fixable`) | 이 도구가 자동으로 고칠 수 있는 진단. 한국어 화면의 `수정 불가`(JSON·로그의 `NOT fixable`)는 스키마를 직접 바꿔야 합니다. |
 
 ## 설치
 전제: Node.js 20 이상(개발·테스트는 22.12 이상). 없으면 `brew install node` 또는 [nodejs.org](https://nodejs.org) 에서 설치합니다.
@@ -44,11 +44,11 @@ npm 레지스트리에는 아직 게시하지 않았습니다. 그래서 아래 
 ```bash
 npm run demo
 ```
-![npm run demo 실행 화면](docs/images/01-demo.png)
-*`npm run demo` 의 실제 출력.*
+![npm run demo 실행 화면(한국어)](docs/images/01-demo.ko.png)
+*`npm run demo` 의 실제 출력(한국어 화면, `MCP_SCHEMA_SHIM_LANG=ko`). 언어를 정하지 않고 한국어가 아닌 환경에서 실행하면 영어로 나옵니다.*
 
-- 첫 줄 `mock model — no LLM is called` : **연습용 목(mock) 모델**입니다. 실제 모델·API 키·네트워크를 쓰지 않고, OpenAI strict 모드의 모델이 보낼 법한 인자(`limit: null` 등)를 흉내 내 만듭니다.
-- 진짜인 것: 예제 MCP 서버와 서버의 인자 검증. 그래서 `direct: FAIL ... received null` 은 실제 서버가 낸 오류입니다.
+- 첫 줄 `연습용 목 모델 — 실제 모델 호출 없음`(영어 화면에서는 `mock model — no LLM is called`) : **연습용 목(mock) 모델**입니다. 실제 모델·API 키·네트워크를 쓰지 않고, OpenAI strict 모드의 모델이 보낼 법한 인자(`limit: null` 등)를 흉내 내 만듭니다.
+- 진짜인 것: 예제 MCP 서버와 서버의 인자 검증. 그래서 `직결: 실패 ... received null` 은 실제 서버가 낸 오류입니다. 이 오류 문장은 서버가 영어로 낸 그대로입니다.
 - 실제 모델과 다른 점: 모델이 어떤 인자를 고를지는 흉내일 뿐이며, 제공자 API 가 스키마를 받아 주는지는 호출하지 않았으므로 확인하지 않습니다.
 
 ## 사용법
@@ -60,7 +60,7 @@ npm run demo
 | `proxy --profile <id> -- <서버 명령>` | stdio MCP 서버 앞에 끼우는 프록시 | `node dist/cli.js proxy --profile gemini-parameters -- node examples/server-v1.mjs` |
 | `simulate --profile <id> [--tool n] [--args json] -- <서버 명령>` | 목 모델로 직결 vs shim 경유 비교 | `npm run demo` |
 
-0.3.0 부터 큰 서버는 `anthropic-strict` 에서 `check` 가 exit 1 로 실패할 수 있습니다. 도구가 20개를 넘거나(`anthropic-strict/limit-tools`) 선택 파라미터가 전체 24개를 넘으면(`anthropic-strict/limit-optional`) API 가 거부하므로, `(all tools)` 오류로 보고되며 `fix` 로 고칠 수 없습니다. 메시지 원문 예: `21 strict tools in one request (limit 20)` (요청 하나에 strict 도구 21개, 한도 20), `25 optional parameters across all strict tool schemas (limit 24)` (모든 strict 도구 스키마의 선택 파라미터 25개, 한도 24).
+0.3.0 부터 큰 서버는 `anthropic-strict` 에서 `check` 가 exit 1 로 실패할 수 있습니다. 도구가 20개를 넘거나(`anthropic-strict/limit-tools`) 선택 파라미터가 전체 24개를 넘으면(`anthropic-strict/limit-optional`) API 가 거부하므로, `(all tools)` 오류로 보고되며 `fix` 로 고칠 수 없습니다. 메시지 원문 예(영어 화면·JSON 기준): `21 strict tools in one request (limit 20)` (요청 하나에 strict 도구 21개, 한도 20), `25 optional parameters across all strict tool schemas (limit 24)` (모든 strict 도구 스키마의 선택 파라미터 25개, 한도 24).
 
 종료 코드: `0` 정상, `1` 오류 등급 진단(check) 또는 못 고치는 오류(fix), `2` 입력·사용법 오류(서버 명령을 줄 때는 서버 기동 실패·타임아웃·오류 응답도 2). `simulate` 는 비교 결과(`via shim: FAIL` 포함)와 무관하게 `0`, 입력 오류만 `2` 입니다. 입력 파일은 `{"tools":[…]}`(`tools/list` 결과) 또는 도구 배열(파일 모드)이고, 서버 모드에서는 `--` 뒤에 stdio 서버 명령을 줍니다.
 
@@ -68,23 +68,23 @@ npm run demo
 
 ### 1) 검사하기 — 무엇이 거부되나
 ```bash
-node dist/cli.js check examples/tools.json --profile openai-strict
+node dist/cli.js check examples/tools.json --profile openai-strict --lang ko
 ```
-![openai-strict 진단표](docs/images/02-check-openai.png)
+![openai-strict 진단표(한국어)](docs/images/02-check-openai.ko.png)
 *규칙 ID, 도구 이름, JSON 포인터(`/properties/limit`), 자동 수정 가능 여부, 공식 문서 URL 이 한 줄씩 나온다. 이 예는 10 오류·1 경고라서 exit 1.*
 
-읽는 법: `fixable` 이면 `fix`/프록시가 고칠 수 있다는 뜻입니다. `NOT fixable` 은 사람이 스키마를 바꿔야 합니다. `--all --format markdown` 으로 모든 프로필 결과를 표로 받아 CI 에 붙일 수 있습니다(예제 도구 기준 합계 `22 error(s), 5 warning(s), 2 info`).
+읽는 법: 마지막 열이 `수정 가능` 이면 `fix`/프록시가 고칠 수 있다는 뜻입니다. `수정 불가` 는 사람이 스키마를 바꿔야 합니다. `--all --format markdown` 으로 모든 프로필 결과를 표로 받아 CI 에 붙일 수 있습니다(예제 도구 기준 합계 `오류 22개, 경고 5개, 정보 2개`).
 
 파일 대신 서버를 직접 검사할 수도 있습니다. `--` 뒤에 서버 시작 명령을 주면 `check` 가 서버를 띄워 `tools/list` 를 모든 페이지 읽고, 서버를 종료한 뒤 같은 표를 출력합니다.
 ```bash
-node dist/cli.js check --profile openai-strict -- node examples/server-v1.mjs
+node dist/cli.js check --profile openai-strict --lang ko -- node examples/server-v1.mjs
 npx mcp-schema-shim check --all --format markdown -- node build/server.js
 ```
-![서버 명령에 직접 실행한 check](docs/images/07-check-server.png)
+![서버 명령에 직접 실행한 check(한국어)](docs/images/07-check-server.ko.png)
 *`check` 가 예제 서버를 띄워 도구 목록을 읽고 같은 표를 출력했습니다(오류가 있어 exit 1).*
 
-![한 요청에 도구 21개: limit-tools 오류, exit 1](docs/images/08-check-limit-tools.png)
-*도구 21개는 개별 규칙을 모두 통과하지만, `check` 는 `anthropic-strict/limit-tools`(요청당 한도 20)를 보고하고 exit 1 로 끝납니다. 메시지는 영어 원문입니다.*
+![한 요청에 도구 21개: limit-tools 오류, exit 1(한국어)](docs/images/08-check-limit-tools.ko.png)
+*도구 21개는 개별 규칙을 모두 통과하지만, `check` 는 `anthropic-strict/limit-tools`(요청당 한도 20)를 보고하고 exit 1 로 끝납니다. 한국어 화면은 규칙별 한 줄 요약을 보여 주고, `--format json` 의 메시지는 영어 원문입니다.*
 
 CI 에서는 한 줄이면 됩니다: `npx mcp-schema-shim check --profile openai-strict -- node build/server.js`(exit 1 이면 단계가 실패). 서버 자체의 로그는 stderr 로 나가므로 stdout 의 `--format json` 은 깨지지 않습니다.
 
@@ -97,23 +97,23 @@ node dist/cli.js fix examples/tools.json --profile openai-strict --map map.json 
 
 ### 3) 이름 변환과 원래 스키마 재검증
 ```bash
-node dist/cli.js simulate --profile anthropic-strict --tool issues.search -- node examples/server-v1.mjs
+node dist/cli.js simulate --profile anthropic-strict --tool issues.search --lang ko -- node examples/server-v1.mjs
 ```
-![도구 이름 변환 결과](docs/images/04-simulate-rename.png)
+![도구 이름 변환 결과(한국어)](docs/images/04-simulate-rename.ko.png)
 *`issues.search` 는 모델에게 `issues_search` 로 보이고(Anthropic 이름 규칙), 서버에는 원래 이름으로 전달된다. 이 화면은 `--args '{"query":""}'` 를 준 실행이라 원래 스키마 위반 이유(`/query`)도 보인다.*
 
 `--args` 로 원래 스키마(`minLength: 1`)를 어기는 인자를 주면, shim 은 서버에 보내지 않고 `/query` 가 왜 틀렸는지를 돌려줍니다. 설명으로 옮긴 제약(`minLength` 등)은 이 마지막 검증이 지킵니다.
 
 ```bash
-node dist/cli.js simulate --profile anthropic-strict --tool issues.search --args '{"query":""}' -- node examples/server-v1.mjs
+node dist/cli.js simulate --profile anthropic-strict --tool issues.search --args '{"query":""}' --lang ko -- node examples/server-v1.mjs
 ```
 ```
-direct:   FAIL MCP error -32602: Tool issues_search not found
-via shim: FAIL mcp-schema-shim: Arguments for tool "issues.search" do not match its original input schema:
-         - /query: must NOT have fewer than 1 characters (minLength)
-         Fix the arguments and call the tool again.
+직결:     실패 MCP error -32602: Tool issues_search not found
+shim 경유: 실패 mcp-schema-shim: Arguments for tool "issues.search" do not match its original input schema:
+                - /query: must NOT have fewer than 1 characters (minLength)
+                Fix the arguments and call the tool again.
 ```
-(위는 출력 중 마지막 두 단락만 옮긴 것입니다. `direct` 는 서버에 변환된 이름 `issues_search` 로 직접 보냈기 때문에 실패합니다.)
+(위는 출력 중 마지막 두 단락만 옮긴 것입니다. `직결` 은 서버에 변환된 이름 `issues_search` 로 직접 보냈기 때문에 실패합니다.)
 
 ### 4) 클라이언트에 끼우기
 MCP 클라이언트 설정에서 서버 항목의 `command` 를 shim 으로 감쌉니다(경로는 본인 clone 위치로):
@@ -173,7 +173,25 @@ node examples/library.mjs
 | 타입 | 타입 | `ProfileId`, `JsonSchema`, `McpTool`, `Severity`, `Diagnostic`, `MapOp`, `MapEntry`, `ToolMap`, `ShimMap`, `TransformOptions`, `TransformResult`, `TransformToolResult`, `RestoreIssue`, `ProfileInfo`, `RuleDef` |
 
 ## 설정
-설정 파일·환경변수·API 키는 없습니다. 동작은 `--profile` 과 위 옵션으로만 정해집니다. 서버 명령을 줄 때 `--timeout <ms>`(기본 `10000`)는 `check` 가 응답마다 기다리는 시간이며, 파일 모드에서 주면 오류입니다. 규칙 전체 목록(규칙마다 공식 문서 URL·확인 날짜)은 [docs/rules.md](docs/rules.md) 에 있습니다.
+설정 파일·API 키는 없습니다. 환경변수는 화면 언어를 고르는 용도뿐입니다(아래 참고). 동작은 `--profile` 과 위 옵션으로 정해집니다. 서버 명령을 줄 때 `--timeout <ms>`(기본 `10000`)는 `check` 가 응답마다 기다리는 시간이며, 파일 모드에서 주면 오류입니다. 규칙 전체 목록(규칙마다 공식 문서 URL·확인 날짜)은 [docs/rules.md](docs/rules.md) 에 있습니다.
+
+### 화면 언어 바꾸기 (영어 / 한국어)
+CLI 는 도움말·보고서·오류·`simulate` 출력을 영어 또는 한국어로 보여 줍니다. 아래 순서로 정하며, 먼저 설정된 것이 이깁니다.
+
+1. `--lang en|ko` (다른 값을 주면 오류 한 줄과 함께 종료 코드 2)
+2. 환경변수 `MCP_SCHEMA_SHIM_LANG`
+3. `LC_ALL`, 그다음 `LC_MESSAGES`, 그다음 `LANG` (`ko_KR.UTF-8` 처럼 `ko` 로 시작하면 한국어)
+4. 그 밖에는 영어
+
+```bash
+node dist/cli.js check examples/tools.json --profile openai-strict --lang ko
+MCP_SCHEMA_SHIM_LANG=ko node dist/cli.js simulate --profile openai-strict -- node examples/server-v1.mjs
+LANG=ko_KR.UTF-8 node dist/cli.js check examples/tools.json --profile openai-strict
+```
+
+`simulate` 에서 한국어가 되는 것은 배너·머리말(`직결`, `shim 경유`, `성공`/`실패`)뿐입니다. 서버와 proxy 가 돌려주는 MCP 도구 결과 본문(모델이 읽는 응답, 위 예의 `MCP error ...`·`Arguments for tool ...`)은 두 언어 모두 영어 그대로입니다. `--format json` 출력·규칙 ID·종료 코드는 두 언어에서 똑같아서 스크립트에는 영향이 없습니다. 한국어에서는 text·markdown 보고서의 각 진단 설명이 규칙별 한국어 한 줄 요약으로 나오고, JSON 의 진단 문장과 proxy 로그 줄은 영어로 남습니다.
+
+`MCP_SCHEMA_SHIM_LANG` 에 `en`/`ko` 가 아닌 값(예: `xx`)을 주면 경고 없이 무시되고 영어로 나옵니다. 잘못된 값을 오류로 막는 것은 `--lang` 뿐입니다.
 
 ## 프로필과 규칙
 프로필은 "어느 제공자의 어느 경로로 보낼 것인가"입니다. `--profile` 로 고릅니다.
@@ -228,6 +246,7 @@ src/
   transform.ts  도구 변환 + 변환 지도 만들기, 이름 충돌 처리
   restore.ts  지도로 인자 되돌리기 + 원래 스키마(ajv)로 검증
   proxy/      stdio JSON-RPC 프록시(proxy.ts, jsonrpc.ts)
+  i18n.ts      영어·한국어 화면 문구 전부와 언어 선택(--lang, MCP_SCHEMA_SHIM_LANG, LANG)
   simulate.ts  목 모델로 직결과 경유 비교(sample.ts 가 인자 생성)
   rpc-client.ts  stdio JSON-RPC 클라이언트: 서버를 띄우고 check 용으로 tools/list 모든 페이지를 읽으며 자식 프로세스를 항상 종료(simulate, check)
   cli.ts      check·fix·proxy·simulate 명령
@@ -253,8 +272,8 @@ src/
 - 스키마 검사·변환만 필요하다면 [tool-schema](https://github.com/slegarraga/tool-schema) 도 살펴보세요.
 
 ## 직접 바꿔 보기
-1. **프로필 바꾸기** — 바꿀 곳: `check` 의 `--profile` 을 `gemini-json-schema` 로. 예상: 오류·경고 없이 `minLength` 무시 안내(info) 2건만 나오고 종료 코드가 0 입니다. 확인: 표의 마지막 줄 `0 error(s), 0 warning(s), 2 info`.
-2. **예제 도구 수정** — 바꿀 곳: `examples/tools.json` 의 `limit` 두 곳에 `"multipleOf": 5` 를 추가. 예상: `check examples/tools.json --profile anthropic-strict` 의 마지막 줄이 `8 error(s)` 에서 `10 error(s)` 로 늘고(`unsupported-constraint`), `fix --map` 지도에 `constraint-to-description` 항목이 생깁니다. 확인: 표의 마지막 줄과 `map.json`.
+1. **프로필 바꾸기** — 바꿀 곳: `check` 의 `--profile` 을 `gemini-json-schema` 로. 예상: 오류·경고 없이 `minLength` 무시 안내(info) 2건만 나오고 종료 코드가 0 입니다. 확인: 표의 마지막 줄 `오류 0개, 경고 0개, 정보 2개`(`--lang en` 이면 `0 error(s), 0 warning(s), 2 info`).
+2. **예제 도구 수정** — 바꿀 곳: `examples/tools.json` 의 `limit` 두 곳에 `"multipleOf": 5` 를 추가. 예상: `check examples/tools.json --profile anthropic-strict` 의 마지막 줄이 `오류 8개` 에서 `오류 10개` 로 늘고(`--lang en` 이면 `8 error(s)` → `10 error(s)`)(`unsupported-constraint`), `fix --map` 지도에 `constraint-to-description` 항목이 생깁니다. 확인: 표의 마지막 줄과 `map.json`.
 3. **복원 시험** — 바꿀 곳: `node dist/cli.js simulate --profile openai-strict --tool search_issues --args '{"query":"x","limit":0}' -- node examples/server-v1.mjs` 처럼 `limit` 을 0 으로. 예상: `limit` 은 원래 스키마에서 `minimum: 1` 이라서 `via shim: FAIL` 과 `/limit: must be >= 1 (minimum)` 이 나옵니다. 확인: 출력 마지막 세 줄.
 
 ## 자주 겪는 문제
@@ -264,7 +283,7 @@ src/
 | `Could not start the server command ...` (exit 2, 서버 명령을 시작하지 못함) | `--` 뒤 명령이 없거나 실행할 수 없음 | 같은 명령을 직접 실행해 보고, `check` 를 실행하는 위치 기준 경로를 쓰세요 |
 | `The server did not answer ... within ... ms` (exit 2, 서버가 제한 시간 안에 응답하지 않음) | 서버 시작이 느리거나 stdout 으로 MCP 를 말하지 않음 | `--timeout` 을 늘리고, 로그는 stdout 이 아니라 stderr 로 내보내세요 |
 | `The server exited (code N) before tools/list finished` (exit 2, `tools/list` 가 끝나기 전에 서버가 종료됨) | 서버가 바로 죽음(스크립트 경로 오타, 서버 자체 오류) | 바로 위 stderr 를 읽고, 같은 명령을 직접 실행해 경로를 확인하세요 |
-| `fix` 가 exit 1 | 못 고치는 오류(재귀 `$ref`, 자유형 객체) 존재 | `check` 표의 `NOT fixable` 줄을 보고 스키마 수정 또는 다른 프로필 선택. exit 1 이어도 `fix` 는 `-o`·`--map` 파일을 씁니다 |
+| `fix` 가 exit 1 | 못 고치는 오류(재귀 `$ref`, 자유형 객체) 존재 | `check` 표의 `수정 불가`(영어 화면은 `NOT fixable`) 줄을 보고 스키마 수정 또는 다른 프로필 선택. exit 1 이어도 `fix` 는 `-o`·`--map` 파일을 씁니다 |
 | `npm test` 가 버전 오류 | vitest 가 Node 22.12 이상 요구 | Node 업데이트(런타임만 쓰면 20 이상) |
 | `npm run demo` 의 직결이 항상 FAIL | 의도된 결과 | 직결 실패를 보여 주는 장면입니다 |
 
